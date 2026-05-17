@@ -1,9 +1,17 @@
 /**
- * Auth context with mock role-switching support for development.
+ * Global Auth Context.
  *
- * In development mode the context exposes `switchRole()` so developers can
- * toggle between EMPLOYEE / MANAGER / ADMIN without a real login flow.
- * In production this is driven by the JWT returned by /api/auth/token.
+ * Every session — including DEV impersonation — is backed by a real signed
+ * JWT issued by the FastAPI backend. The `impersonate(employee_id)` action
+ * powers the topbar User Impersonation Selector and replaces the legacy
+ * client-only role toggle that caused 401 auth desync (the Axios interceptor
+ * had no token while the backend required one).
+ *
+ * Flow for impersonate():
+ *   1. POST /api/auth/mock-login { employee_id }   → { access_token }
+ *   2. localStorage.setItem('access_token', …)     → interceptor uses it
+ *   3. GET  /api/users/me                          → canonical user document
+ *   4. setState() + bump authVersion               → downstream consumers refetch
  */
 import {
   createContext,
@@ -27,54 +35,25 @@ interface AuthState {
   role: UserRole | null
   isAuthenticated: boolean
   isLoading: boolean
+  /**
+   * Monotonically increases on every successful login / impersonation.
+   * Consumers can include this in a `useEffect` dependency array to force
+   * a refetch when the active identity changes — analogous to React Query's
+   * `queryClient.invalidateQueries()`.
+   */
+  authVersion: number
 }
 
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   /**
-   * DEV ONLY — switches the active role without a round-trip to the server.
-   * The mock users below are used so the UI can be explored for each role.
+   * DEV-only: instantly switch the active session to a seeded user.
+   * Accepts the human-readable employee_id (e.g. "EMP001", "MGR002", "ADM001").
+   * Performs a full mock login so the resulting JWT is honoured by every
+   * backend endpoint.
    */
-  switchRole: (role: UserRole) => void
-}
-
-// ---------------------------------------------------------------------------
-// Mock users (DEV only) — one per role as defined in docs/ROLE_PERMISSIONS.md
-// ---------------------------------------------------------------------------
-
-const MOCK_USERS: Record<UserRole, User> = {
-  EMPLOYEE: {
-    _id: 'mock-employee-001',
-    employee_id: 'EMP001',
-    name: 'Priya Sharma',
-    email: 'priya.sharma@atomquest.in',
-    role: 'EMPLOYEE',
-    department: 'Engineering',
-    manager_id: 'mock-manager-001',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  MANAGER: {
-    _id: 'mock-manager-001',
-    employee_id: 'MGR001',
-    name: 'Rahul Mehta',
-    email: 'rahul.mehta@atomquest.in',
-    role: 'MANAGER',
-    department: 'Engineering',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  ADMIN: {
-    _id: 'mock-admin-001',
-    employee_id: 'ADM001',
-    name: 'Sneha Kapoor',
-    email: 'sneha.kapoor@atomquest.in',
-    role: 'ADMIN',
-    department: 'HR & Administration',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
+  impersonate: (employeeId: string) => Promise<User>
 }
 
 // ---------------------------------------------------------------------------
@@ -83,36 +62,64 @@ const MOCK_USERS: Record<UserRole, User> = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
+/**
+ * Synchronous initial state — avoids a flash of unauthenticated UI when a
+ * valid JWT is already in localStorage. The /users/me round-trip happens in
+ * an effect immediately after mount.
+ */
+function getInitialState(): AuthState {
+  // Defensively scrub any leftover keys from the previous mock-role design.
+  localStorage.removeItem('mock_role')
+  sessionStorage.removeItem('mock_role_backup')
+
+  const token = localStorage.getItem('access_token')
+  if (token) {
+    return {
+      user: null,
+      role: null,
+      isAuthenticated: false,
+      isLoading: true,
+      authVersion: 0,
+    }
+  }
+  return {
     user: null,
     role: null,
     isAuthenticated: false,
-    isLoading: true,
-  })
+    isLoading: false,
+    authVersion: 0,
+  }
+}
 
-  // On mount: restore session from localStorage (real token or mock role)
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AuthState>(getInitialState)
+
+  // On mount: hydrate the session by validating any persisted JWT.
   useEffect(() => {
     const token = localStorage.getItem('access_token')
-    const mockRole = localStorage.getItem('mock_role') as UserRole | null
+    if (!token) return
 
-    if (mockRole && MOCK_USERS[mockRole]) {
-      setState({ user: MOCK_USERS[mockRole], role: mockRole, isAuthenticated: true, isLoading: false })
-      return
-    }
-
-    if (token) {
-      api.get<User>('/users/me')
-        .then(({ data }) => {
-          setState({ user: data, role: data.role, isAuthenticated: true, isLoading: false })
+    api
+      .get<User>('/users/me')
+      .then(({ data }) => {
+        setState((prev) => ({
+          user: data,
+          role: data.role,
+          isAuthenticated: true,
+          isLoading: false,
+          authVersion: prev.authVersion + 1,
+        }))
+      })
+      .catch(() => {
+        localStorage.removeItem('access_token')
+        setState({
+          user: null,
+          role: null,
+          isAuthenticated: false,
+          isLoading: false,
+          authVersion: 0,
         })
-        .catch(() => {
-          localStorage.removeItem('access_token')
-          setState({ user: null, role: null, isAuthenticated: false, isLoading: false })
-        })
-    } else {
-      setState((s) => ({ ...s, isLoading: false }))
-    }
+      })
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
@@ -121,27 +128,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
     localStorage.setItem('access_token', data.access_token)
-    localStorage.removeItem('mock_role')
     const { data: me } = await api.get<User>('/users/me')
-    setState({ user: me, role: me.role, isAuthenticated: true, isLoading: false })
+    setState((prev) => ({
+      user: me,
+      role: me.role,
+      isAuthenticated: true,
+      isLoading: false,
+      authVersion: prev.authVersion + 1,
+    }))
   }, [])
 
   const logout = useCallback(() => {
     localStorage.removeItem('access_token')
-    localStorage.removeItem('mock_role')
-    setState({ user: null, role: null, isAuthenticated: false, isLoading: false })
+    setState({
+      user: null,
+      role: null,
+      isAuthenticated: false,
+      isLoading: false,
+      authVersion: 0,
+    })
   }, [])
 
-  /** DEV ONLY: instantly switch to a mock user of the given role. */
-  const switchRole = useCallback((role: UserRole) => {
-    localStorage.removeItem('access_token')
-    localStorage.setItem('mock_role', role)
-    setState({ user: MOCK_USERS[role], role, isAuthenticated: true, isLoading: false })
+  const impersonate = useCallback(async (employeeId: string): Promise<User> => {
+    const { data } = await api.post<Token>('/auth/mock-login', {
+      employee_id: employeeId,
+    })
+    // Persist BEFORE the next request so the Axios interceptor picks up the
+    // new token — this is the fix for the original 401 desync.
+    localStorage.setItem('access_token', data.access_token)
+
+    const { data: me } = await api.get<User>('/users/me')
+    setState((prev) => ({
+      user: me,
+      role: me.role,
+      isAuthenticated: true,
+      isLoading: false,
+      authVersion: prev.authVersion + 1,
+    }))
+    return me
   }, [])
 
-  const value = useMemo(
-    () => ({ ...state, login, logout, switchRole }),
-    [state, login, logout, switchRole],
+  const value = useMemo<AuthContextValue>(
+    () => ({ ...state, login, logout, impersonate }),
+    [state, login, logout, impersonate],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -4,14 +4,24 @@ import { Target } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import type { UserRole } from '@/types'
 
-const QUICK_ROLES: { role: UserRole; label: string; colour: string }[] = [
-  { role: 'EMPLOYEE', label: 'Employee', colour: 'border-blue-400 text-blue-700 hover:bg-blue-50' },
-  { role: 'MANAGER', label: 'Manager', colour: 'border-green-400 text-green-700 hover:bg-green-50' },
-  { role: 'ADMIN', label: 'Admin', colour: 'border-purple-400 text-purple-700 hover:bg-purple-50' },
+/**
+ * DEV quick-login presets. Each button performs a real mock login against
+ * /api/auth/mock-login for a representative seeded user — same code path as
+ * the topbar User Impersonation Selector — so the resulting JWT is valid.
+ */
+const QUICK_ROLES: {
+  role: UserRole
+  employeeId: string
+  label: string
+  colour: string
+}[] = [
+  { role: 'EMPLOYEE', employeeId: 'EMP001', label: 'Employee', colour: 'border-blue-400 text-blue-700 hover:bg-blue-50' },
+  { role: 'MANAGER',  employeeId: 'MGR001', label: 'Manager',  colour: 'border-green-400 text-green-700 hover:bg-green-50' },
+  { role: 'ADMIN',    employeeId: 'ADM001', label: 'Admin',    colour: 'border-purple-400 text-purple-700 hover:bg-purple-50' },
 ]
 
 export function LoginPage() {
-  const { login, switchRole } = useAuth()
+  const { login, impersonate } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -32,9 +42,17 @@ export function LoginPage() {
     }
   }
 
-  function handleQuickLogin(role: UserRole) {
-    switchRole(role)
-    navigate('/', { replace: true })
+  async function handleQuickLogin(employeeId: string) {
+    setError('')
+    setLoading(true)
+    try {
+      await impersonate(employeeId)
+      navigate('/', { replace: true })
+    } catch {
+      setError('Quick login failed. Is the backend running and seeded?')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -87,11 +105,13 @@ export function LoginPage() {
         <div className="border-t pt-4 space-y-2">
           <p className="text-center text-xs text-slate-400 font-medium">Dev: Quick login as</p>
           <div className="flex gap-2">
-            {QUICK_ROLES.map(({ role, label, colour }) => (
+            {QUICK_ROLES.map(({ role, employeeId, label, colour }) => (
               <button
                 key={role}
-                onClick={() => handleQuickLogin(role)}
-                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors ${colour}`}
+                type="button"
+                disabled={loading}
+                onClick={() => handleQuickLogin(employeeId)}
+                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${colour}`}
               >
                 {label}
               </button>

@@ -15,6 +15,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
+import { MockDatePicker } from '@/components/admin/MockDatePicker'
 import { RoleSwitcher } from './RoleSwitcher'
 
 export interface NavItem {
@@ -104,12 +105,18 @@ export function AppShell({ role, navItems }: AppShellProps) {
         {/* User footer */}
         <div className="border-t p-4 space-y-3">
           <div className="flex items-center gap-3">
-            <div className={cn('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white', ROLE_ACCENT[role])}>
+            <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white', ROLE_ACCENT[role])}>
               {user?.name?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-900 truncate">{user?.name}</p>
               <p className="text-xs text-slate-500 truncate">{user?.department}</p>
+              {user?.reporting_to_name && (
+                <p className="text-xs text-slate-400 truncate mt-0.5">
+                  Reports to:{' '}
+                  <span className="font-medium text-slate-500">{user.reporting_to_name}</span>
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -136,14 +143,19 @@ export function AppShell({ role, navItems }: AppShellProps) {
             <LayoutDashboard size={15} />
             Dashboard
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <MockDatePicker />
             <RoleSwitcher />
           </div>
         </header>
 
-        {/* Page content */}
+        {/* Page content
+            The Outlet is keyed by the active user's _id so that an
+            impersonation swap (RoleSwitcher) instantly remounts the page —
+            mimicking `queryClient.invalidateQueries()` and forcing every
+            dashboard's data fetch to re-run with the new JWT. */}
         <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
+          <Outlet key={user?._id ?? 'anonymous'} />
         </main>
       </div>
     </div>

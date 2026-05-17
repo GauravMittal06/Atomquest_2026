@@ -1,4 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import {
   BarChart2,
   CheckSquare,
@@ -8,12 +9,17 @@ import {
   Users,
 } from 'lucide-react'
 
+import { setNavigate } from '@/lib/navigationService'
 import { AppShell } from '@/components/layout/AppShell'
 import { RequireAuth } from '@/components/layout/RequireAuth'
 import { RootRedirect } from '@/components/layout/RootRedirect'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { EmployeeDashboard } from '@/pages/employee/Dashboard'
+import { GoalsPage } from '@/pages/employee/GoalsPage'
+import { CheckInsPage } from '@/pages/employee/CheckInsPage'
 import { ManagerDashboard } from '@/pages/manager/Dashboard'
+import { ReviewPage } from '@/pages/manager/ReviewPage'
+import { CheckInReviewPage } from '@/pages/manager/CheckInReviewPage'
 import { AdminDashboard } from '@/pages/admin/Dashboard'
 
 const employeeNav = [
@@ -25,6 +31,7 @@ const employeeNav = [
 
 const managerNav = [
   { label: 'Dashboard', to: '/manager/dashboard', icon: <LayoutDashboard size={16} /> },
+  { label: 'Check-ins', to: '/manager/checkins', icon: <CheckSquare size={16} /> },
   { label: 'Team Goals', to: '/manager/team', icon: <Users size={16} /> },
   { label: 'Approvals', to: '/manager/approvals', icon: <CheckSquare size={16} /> },
   { label: 'Reports', to: '/manager/reports', icon: <BarChart2 size={16} /> },
@@ -39,6 +46,14 @@ const adminNav = [
 ]
 
 export function AppRouter() {
+  const navigate = useNavigate()
+
+  // Register React Router's navigate with the singleton so the axios
+  // interceptor can perform soft client-side redirects (no page reload).
+  useEffect(() => {
+    setNavigate(navigate)
+  }, [navigate])
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -50,15 +65,16 @@ export function AppRouter() {
         {/* Employee */}
         <Route element={<AppShell role="EMPLOYEE" navItems={employeeNav} />}>
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
-          {/* Placeholder routes — replace with real pages */}
-          <Route path="/employee/goals" element={<ComingSoon title="My Goal Sheet" />} />
-          <Route path="/employee/checkins" element={<ComingSoon title="Check-ins" />} />
+          <Route path="/employee/goals" element={<GoalsPage />} />
+          <Route path="/employee/checkins" element={<CheckInsPage />} />
           <Route path="/employee/reports" element={<ComingSoon title="My Reports" />} />
         </Route>
 
         {/* Manager */}
         <Route element={<AppShell role="MANAGER" navItems={managerNav} />}>
           <Route path="/manager/dashboard" element={<ManagerDashboard />} />
+          <Route path="/manager/review/:sheetId" element={<ReviewPage />} />
+          <Route path="/manager/checkins" element={<CheckInReviewPage />} />
           <Route path="/manager/team" element={<ComingSoon title="Team Goals" />} />
           <Route path="/manager/approvals" element={<ComingSoon title="Approvals" />} />
           <Route path="/manager/reports" element={<ComingSoon title="Team Reports" />} />

@@ -323,6 +323,25 @@ async def update_goal(
 
     await _get_editable_sheet(goal["goal_sheet_id"], current.user_id, current.role, db)
 
+    # ── Shared goal enforcement (docs/SHARED_GOALS.md) ──────────────────────
+    # Employees may ONLY update weightage on a shared goal.
+    # Title, target, UoM, and thrust_area are read-only for all non-Admin users.
+    shared_ref = goal.get("shared_goal_ref") or {}
+    is_shared = isinstance(shared_ref, dict) and shared_ref.get("is_shared", False)
+    if is_shared and current.role == UserRole.EMPLOYEE:
+        forbidden_fields = {
+            k for k in ("thrust_area", "description", "uom_type", "unit_of_measure", "target_value")
+            if getattr(body, k, None) is not None
+        }
+        if forbidden_fields:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Shared goals are read-only for employees except for Weightage. "
+                    f"Attempted to change: {', '.join(sorted(forbidden_fields))}."
+                ),
+            )
+
     update_data = body.model_dump(exclude_none=True)
     update_data["updated_at"] = datetime.utcnow()
     await db[COLLECTION_GOALS].update_one({"_id": ObjectId(goal_id)}, {"$set": update_data})
@@ -343,6 +362,19 @@ async def delete_goal(
         raise HTTPException(status_code=404, detail="Goal not found")
 
     await _get_editable_sheet(goal["goal_sheet_id"], current.user_id, current.role, db)
+
+    # Shared goals cannot be deleted by employees (SHARED_GOALS.md)
+    shared_ref = goal.get("shared_goal_ref") or {}
+    if (
+        isinstance(shared_ref, dict)
+        and shared_ref.get("is_shared", False)
+        and current.role == UserRole.EMPLOYEE
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Shared goals cannot be deleted by employees.",
+        )
+
     await db[COLLECTION_GOALS].delete_one({"_id": ObjectId(goal_id)})
     await _recalculate_sheet_totals(goal["goal_sheet_id"], db)
 

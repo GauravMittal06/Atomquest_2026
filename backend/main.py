@@ -8,7 +8,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import close_db, connect_db
-from routers import auth_router, checkins_router, goal_sheets_router, goals_router, users_router
+from routers import (
+    auth_router,
+    checkin_comments_router,
+    checkins_router,
+    goal_sheets_router,
+    goals_router,
+    shared_kpis_router,
+    system_router,
+    users_router,
+)
 
 
 @asynccontextmanager
@@ -38,6 +47,9 @@ app.include_router(users_router)
 app.include_router(goal_sheets_router)
 app.include_router(goals_router)
 app.include_router(checkins_router)
+app.include_router(checkin_comments_router)
+app.include_router(shared_kpis_router)
+app.include_router(system_router)
 
 
 @app.get("/health", tags=["Health"])

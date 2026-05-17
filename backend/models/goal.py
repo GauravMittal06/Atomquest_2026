@@ -32,7 +32,15 @@ class ThrustArea(str, Enum):
 
 
 class UoMType(str, Enum):
-    NUMERIC = "Numeric"
+    """
+    UoM types per docs/VALIDATION_RULES.md §UoM Types.
+
+    Numeric is kept as a legacy alias for Max (higher-is-better).
+    New goals should pick Min, Max, Timeline or Zero explicitly.
+    """
+    NUMERIC = "Numeric"   # legacy — treated as Max
+    MIN = "Min"
+    MAX = "Max"
     TIMELINE = "Timeline"
     ZERO = "Zero"
 
@@ -62,10 +70,16 @@ class SharedGoalRequestStatus(str, Enum):
 
 class SharedGoalRef(BaseModel):
     is_shared: bool = False
+    # User ID of the Admin/Manager who pushed the KPI
     originator_id: Optional[str] = None
+    # Common UUID linking ALL goal copies of this shared KPI (= SharedKpi._id)
+    link_id: Optional[str] = None
+    # Employee whose check-ins are the authoritative achievement source
+    # (docs/SHARED_GOALS.md — "Achievement updates sync automatically from primary owner")
+    primary_owner_id: Optional[str] = None
+    # Legacy peer-to-peer field kept for backwards compatibility
     partner_id: Optional[str] = None
     request_status: Optional[SharedGoalRequestStatus] = None
-    link_id: Optional[str] = None  # Common UUID linking both goal copies
 
 
 # ---------------------------------------------------------------------------
@@ -89,14 +103,18 @@ class GoalBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_target_by_uom_type(self) -> "GoalBase":
-        if self.uom_type == UoMType.NUMERIC:
-            # Numeric: target must be a positive finite number
+        if self.uom_type in (UoMType.NUMERIC, UoMType.MAX, UoMType.MIN):
+            # Numeric / Max / Min: target must be a positive finite number
             try:
                 val = float(self.target_value)
             except (TypeError, ValueError):
-                raise ValueError("target_value must be a positive number for Numeric goals")
+                raise ValueError(
+                    f"target_value must be a positive number for {self.uom_type.value} goals"
+                )
             if val <= 0:
-                raise ValueError("target_value must be > 0 for Numeric goals")
+                raise ValueError(
+                    f"target_value must be > 0 for {self.uom_type.value} goals"
+                )
             self.target_value = round(val, 4)
 
         elif self.uom_type == UoMType.TIMELINE:
@@ -155,13 +173,17 @@ class GoalUpdate(BaseModel):
     @model_validator(mode="after")
     def validate_target_if_uom_provided(self) -> "GoalUpdate":
         if self.uom_type and self.target_value is not None:
-            if self.uom_type == UoMType.NUMERIC:
+            if self.uom_type in (UoMType.NUMERIC, UoMType.MAX, UoMType.MIN):
                 try:
                     val = float(self.target_value)
                 except (TypeError, ValueError):
-                    raise ValueError("target_value must be numeric for Numeric goals")
+                    raise ValueError(
+                        f"target_value must be numeric for {self.uom_type.value} goals"
+                    )
                 if val <= 0:
-                    raise ValueError("target_value must be > 0 for Numeric goals")
+                    raise ValueError(
+                        f"target_value must be > 0 for {self.uom_type.value} goals"
+                    )
             elif self.uom_type == UoMType.ZERO:
                 if str(self.target_value).strip() not in ("Yes", "No"):
                     raise ValueError("target_value must be 'Yes' or 'No' for Zero goals")

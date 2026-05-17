@@ -42,6 +42,11 @@ from models.check_in import (
     ManagerRemarkUpdate,
     CheckInPublic,
 )
+from models.checkin_comment import (
+    CheckinCommentCreate,
+    CheckinCommentInDB,
+    CheckinCommentPublic,
+)
 
 __all__ = [
     # user
@@ -58,4 +63,6 @@ __all__ = [
     # check_in
     "PeriodLabel", "CheckInBase", "CheckInInDB", "CheckInCreate",
     "CheckInUpdate", "ManagerRemarkUpdate", "CheckInPublic",
+    # checkin_comment
+    "CheckinCommentCreate", "CheckinCommentInDB", "CheckinCommentPublic",
 ]

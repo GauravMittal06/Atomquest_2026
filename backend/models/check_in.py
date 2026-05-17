@@ -18,12 +18,20 @@ from pydantic import BaseModel, Field, model_validator
 # ---------------------------------------------------------------------------
 
 class PeriodLabel(str, Enum):
-    """Standard annual review period labels (docs/CHECKIN_RULES.md §3)."""
+    """
+    Quarterly check-in period labels.
+
+    Aligned with the four input windows in docs/CHECKIN_RULES.md
+    (Q1 → July, Q2 → October, Q3 → January, Q4 → March/April).
+
+    MID_YEAR / YEAR_END are kept as legacy aliases to preserve any existing
+    seed data; new check-ins should use Q1–Q4.
+    """
     Q1 = "Q1"
     Q2 = "Q2"
-    MID_YEAR = "MID_YEAR"
     Q3 = "Q3"
     Q4 = "Q4"
+    MID_YEAR = "MID_YEAR"
     YEAR_END = "YEAR_END"
 
 

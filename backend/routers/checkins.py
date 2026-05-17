@@ -1,6 +1,11 @@
 """
 Check-ins router.
-Enforces rules from docs/CHECKIN_RULES.md.
+
+Enforces:
+  - Quarterly window restrictions per docs/CHECKIN_RULES.md
+  - Progress-score formulas per docs/VALIDATION_RULES.md (delegated to
+    services/progress_calculator.py — single source of truth for the maths)
+  - Shared-goal achievement sync per docs/SHARED_GOALS.md
 """
 
 from __future__ import annotations
@@ -19,9 +24,10 @@ from models.check_in import (
     CheckInUpdate,
     ManagerRemarkUpdate,
 )
-from models.goal import UoMType
 from models.goal_sheet import GoalSheetStatus
 from models.user import TokenData, UserRole
+from services.checkin_window import get_current_cycle_status, is_input_window_open
+from services.progress_calculator import calculate_progress
 
 router = APIRouter(prefix="/api/checkins", tags=["Check-ins"])
 
@@ -44,6 +50,26 @@ async def _resolve_goal_and_sheet(goal_id: str, db):
     return goal, sheet
 
 
+def _require_open_window(role: UserRole) -> None:
+    """
+    Block achievement-input mutations outside the active quarterly window
+    (docs/CHECKIN_RULES.md §Restrictions). Admins are allowed through so they
+    can demo or back-fill data.
+    """
+    if role == UserRole.ADMIN:
+        return
+    if not is_input_window_open():
+        status_now = get_current_cycle_status()
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Check-in inputs are read-only — {status_now.banner_title}. "
+                "The next window opens "
+                f"{status_now.next_window_opens.isoformat() if status_now.next_window_opens else 'shortly'}."
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
@@ -56,21 +82,18 @@ async def add_check_in(
     db = get_database()
     goal, sheet = await _resolve_goal_and_sheet(body.goal_id, db)
 
-    # State gate: APPROVED or LOCKED (CHECKIN_RULES.md §2)
     sheet_status = GoalSheetStatus(sheet["status"])
     if sheet_status not in (GoalSheetStatus.APPROVED, GoalSheetStatus.LOCKED):
         raise HTTPException(
             status_code=422,
             detail="Check-ins can only be added to APPROVED or LOCKED Goal Sheets.",
         )
-    if sheet_status == GoalSheetStatus.LOCKED:
-        raise HTTPException(status_code=422, detail="Goal Sheet is LOCKED; no new check-ins allowed.")
 
-    # Ownership check
     if sheet["employee_id"] != current.user_id and current.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Access denied.")
 
-    # Duplicate check-in guard (CHECKIN_RULES.md §4)
+    _require_open_window(current.role)
+
     existing = await db[COLLECTION_CHECKINS].find_one({
         "goal_id": body.goal_id,
         "period_label": body.period_label,
@@ -78,7 +101,7 @@ async def add_check_in(
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"A check-in for period '{body.period_label}' already exists for this goal.",
+            detail=f"A check-in for period '{body.period_label.value}' already exists for this goal.",
         )
 
     doc = body.model_dump()
@@ -90,8 +113,8 @@ async def add_check_in(
     result = await db[COLLECTION_CHECKINS].insert_one(doc)
     doc["_id"] = str(result.inserted_id)
 
-    # Update goal's latest actual value & achievement
     await _update_goal_achievement(body.goal_id, body.actual_value, goal, db)
+    await _recompute_sheet_overall_score(goal["goal_sheet_id"], db)
 
     return doc
 
@@ -106,12 +129,29 @@ async def list_check_ins_for_goal(
     current: TokenData = Depends(get_current_user),
 ):
     db = get_database()
-    goal, sheet = await _resolve_goal_and_sheet(goal_id, db)
+    _goal, sheet = await _resolve_goal_and_sheet(goal_id, db)
 
     if current.role == UserRole.EMPLOYEE and sheet["employee_id"] != current.user_id:
         raise HTTPException(status_code=403, detail="Access denied.")
 
     cursor = db[COLLECTION_CHECKINS].find({"goal_id": goal_id})
+    return [_serialize(d) async for d in cursor]
+
+
+@router.get("/sheet/{sheet_id}", response_model=List[CheckInPublic])
+async def list_check_ins_for_sheet(
+    sheet_id: str,
+    current: TokenData = Depends(get_current_user),
+):
+    """All check-ins across every goal on a sheet (used by Manager review view)."""
+    db = get_database()
+    sheet = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
+    if not sheet:
+        raise HTTPException(status_code=404, detail="Goal Sheet not found")
+    if current.role == UserRole.EMPLOYEE and sheet["employee_id"] != current.user_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    cursor = db[COLLECTION_CHECKINS].find({"goal_sheet_id": sheet_id})
     return [_serialize(d) async for d in cursor]
 
 
@@ -133,7 +173,13 @@ async def update_check_in(
     if doc["created_by"] != current.user_id and current.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Access denied.")
 
-    grace_cutoff = doc["check_in_date"] + timedelta(hours=GRACE_WINDOW_HOURS)
+    _require_open_window(current.role)
+
+    # Motor returns MongoDB datetimes as offset-naive UTC; attach tzinfo so the
+    # comparison with datetime.now(timezone.utc) (offset-aware) doesn't raise.
+    grace_cutoff = (doc["check_in_date"] + timedelta(hours=GRACE_WINDOW_HOURS)).replace(
+        tzinfo=timezone.utc
+    )
     if datetime.now(timezone.utc) > grace_cutoff and current.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=422,
@@ -147,13 +193,14 @@ async def update_check_in(
         goal = await db[COLLECTION_GOALS].find_one({"_id": ObjectId(doc["goal_id"])})
         if goal:
             await _update_goal_achievement(doc["goal_id"], update_data["actual_value"], goal, db)
+            await _recompute_sheet_overall_score(doc["goal_sheet_id"], db)
 
     updated = await db[COLLECTION_CHECKINS].find_one({"_id": ObjectId(checkin_id)})
     return _serialize(updated)
 
 
 # ---------------------------------------------------------------------------
-# Manager remark
+# Manager remark (legacy free-text remark on a single check-in)
 # ---------------------------------------------------------------------------
 
 @router.patch("/{checkin_id}/manager-remark", response_model=CheckInPublic)
@@ -180,30 +227,84 @@ async def add_manager_remark(
 # ---------------------------------------------------------------------------
 
 async def _update_goal_achievement(goal_id: str, actual_value, goal: dict, db) -> None:
-    """Recalculate achievement_pct and goal_score from latest check-in."""
-    uom_type = goal.get("uom_type")
-    weightage = float(goal.get("weightage", 0))
-    target_value = goal.get("target_value")
-
-    achievement_pct: float | None = None
-    goal_score: float | None = None
-
-    if uom_type == UoMType.NUMERIC:
-        try:
-            actual = float(actual_value)
-            target = float(target_value)
-            if target > 0:
-                achievement_pct = round((actual / target) * 100, 2)
-                goal_score = round(min(achievement_pct, 100) * (weightage / 100), 4)
-        except (TypeError, ValueError):
-            pass
+    """
+    Recalculate achievement_pct and goal_score from the latest check-in,
+    delegating the formula to services/progress_calculator (the documented
+    Min/Max/Timeline/Zero rules — VALIDATION_RULES.md).
+    """
+    progress = calculate_progress(
+        uom_type=goal.get("uom_type"),
+        target_value=goal.get("target_value"),
+        actual_value=actual_value,
+        weightage=float(goal.get("weightage", 0)),
+    )
 
     await db[COLLECTION_GOALS].update_one(
         {"_id": ObjectId(goal_id)},
         {"$set": {
             "latest_actual_value": actual_value,
-            "achievement_pct": achievement_pct,
-            "goal_score": goal_score,
+            "achievement_pct": progress.achievement_pct,
+            "goal_score": progress.goal_score,
             "updated_at": datetime.utcnow(),
         }},
+    )
+
+    # Shared-goal achievement sync (docs/SHARED_GOALS.md)
+    shared_ref = goal.get("shared_goal_ref")
+    if isinstance(shared_ref, dict) and shared_ref.get("is_shared"):
+        link_id = shared_ref.get("link_id")
+        primary_owner_id = shared_ref.get("primary_owner_id")
+        if link_id and primary_owner_id and goal.get("owner_id") == primary_owner_id:
+            await _sync_shared_goal_achievement(
+                link_id=link_id,
+                primary_goal_id=goal_id,
+                actual_value=actual_value,
+                achievement_pct=progress.achievement_pct,
+                db=db,
+            )
+
+
+async def _sync_shared_goal_achievement(
+    link_id: str,
+    primary_goal_id: str,
+    actual_value,
+    achievement_pct,
+    db,
+) -> None:
+    """Propagate the primary owner's achievement to all linked goal copies."""
+    async for linked_goal in db[COLLECTION_GOALS].find(
+        {
+            "shared_goal_ref.link_id": link_id,
+            "_id": {"$ne": ObjectId(primary_goal_id)},
+        }
+    ):
+        # Re-evaluate the linked copy's score from its own weightage so each
+        # employee keeps the score they negotiated even when they share a KPI.
+        from services.progress_calculator import calculate_goal_score
+        linked_score = calculate_goal_score(achievement_pct, float(linked_goal.get("weightage", 0)))
+        await db[COLLECTION_GOALS].update_one(
+            {"_id": linked_goal["_id"]},
+            {"$set": {
+                "latest_actual_value": actual_value,
+                "achievement_pct": achievement_pct,
+                "goal_score": linked_score,
+                "updated_at": datetime.utcnow(),
+            }},
+        )
+        await _recompute_sheet_overall_score(str(linked_goal["goal_sheet_id"]), db)
+
+
+async def _recompute_sheet_overall_score(sheet_id: str, db) -> None:
+    """Sum the per-goal scores into the parent sheet's overall_score."""
+    pipeline = [
+        {"$match": {"goal_sheet_id": sheet_id, "goal_score": {"$ne": None}}},
+        {"$group": {"_id": None, "total_score": {"$sum": "$goal_score"}}},
+    ]
+    total: float | None = None
+    async for result in db[COLLECTION_GOALS].aggregate(pipeline):
+        total = round(result.get("total_score") or 0.0, 2)
+        break
+    await db[COLLECTION_GOAL_SHEETS].update_one(
+        {"_id": ObjectId(sheet_id)},
+        {"$set": {"overall_score": total, "updated_at": datetime.utcnow()}},
     )

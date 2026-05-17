@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from auth import get_current_user, require_roles
-from database import COLLECTION_GOAL_SHEETS, COLLECTION_GOALS, get_database
+from database import COLLECTION_AUDIT_LOG, COLLECTION_GOAL_SHEETS, COLLECTION_GOALS, get_database
 from models.goal import GoalCreate, GoalPublic, GoalUpdate, UoMType
 from models.goal_sheet import ALLOWED_TRANSITIONS, AuditLogEntry, GoalSheetPublic, GoalSheetStatus, GoalSheetStatusUpdate
 from models.user import TokenData, UserRole
@@ -484,6 +484,27 @@ async def manager_update_goal(
         {"_id": ObjectId(goal_id)}, {"$set": update_data}
     )
     await _recalculate_sheet_totals(goal["goal_sheet_id"], db)
+
+    # ── Audit log (docs/REPORTING_REQUIREMENTS.md §Audit Log Rules) ───────────
+    # Write one record per changed field to the dedicated 'audit_log' collection.
+    # Captures: who changed, which field, previous value, new value, timestamp.
+    now = datetime.utcnow()
+    audit_records = [
+        {
+            "goal_id": goal_id,
+            "sheet_id": goal["goal_sheet_id"],
+            "field_changed": field,
+            "previous_value": goal.get(field),
+            "new_value": new_val,
+            "actor_id": current.user_id,
+            "actor_role": current.role.value,
+            "timestamp": now,
+        }
+        for field, new_val in update_data.items()
+        if field != "updated_at" and goal.get(field) != new_val
+    ]
+    if audit_records:
+        await db[COLLECTION_AUDIT_LOG].insert_many(audit_records)
 
     doc = await db[COLLECTION_GOALS].find_one({"_id": ObjectId(goal_id)})
     return _serialize(doc)

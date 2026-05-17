@@ -6,14 +6,26 @@ Permission matrix from docs/ROLE_PERMISSIONS.md.
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_roles
-from database import COLLECTION_GOAL_SHEETS, COLLECTION_GOALS, get_database
+from database import (
+    COLLECTION_AUDIT_LOG,
+    COLLECTION_CHECKIN_COMMENTS,
+    COLLECTION_CHECKINS,
+    COLLECTION_GOAL_SHEETS,
+    COLLECTION_GOALS,
+    COLLECTION_USERS,
+    get_database,
+)
 from models.goal_sheet import (
     ALLOWED_TRANSITIONS,
     AuditLogEntry,
@@ -107,6 +119,351 @@ async def list_goal_sheets(
     cursor = db[COLLECTION_GOAL_SHEETS].find(query)
     return [_serialize(d) async for d in cursor]
 
+
+# ---------------------------------------------------------------------------
+# Export — Planned vs Actual Achievement CSV
+# Source: docs/REPORTING_REQUIREMENTS.md §Required Reports
+#         docs/ROLE_PERMISSIONS.md §Admin — "Export reports"
+# ---------------------------------------------------------------------------
+
+def _iso(dt) -> str:
+    """Format a datetime as ISO 8601 (UTC). Returns '' for None/invalid input."""
+    if not isinstance(dt, datetime):
+        return ""
+    # Treat naive timestamps from Motor as UTC.
+    if dt.tzinfo is None:
+        return dt.isoformat(timespec="seconds") + "Z"
+    return dt.isoformat(timespec="seconds")
+
+
+@router.get("/export/achievement")
+async def export_achievement_report(
+    current: TokenData = Depends(require_roles(UserRole.ADMIN)),
+):
+    """
+    Admin-only.  Streams all goal sheets as a Planned vs Actual CSV.
+
+    Achievement columns (docs/REPORTING_REQUIREMENTS.md §Planned vs Actual):
+      employee_id · employee_name · department · period_label · sheet_status ·
+      thrust_area · goal_description · uom_type · unit_of_measure ·
+      planned_target_value · latest_actual_value · achievement_pct ·
+      goal_score · weightage · overall_score
+
+    Audit-trail columns (docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
+    joined with docs/WORKFLOWS.md §Goal Lifecycle):
+      goal_id · goal_created_date · goal_approved_date · checkin_quarter ·
+      manager_checkin_comment · comment_author · comment_timestamp ·
+      last_modified_by · last_modified_date
+
+    Joins:
+      goal_sheets  (embedded audit_log → goal_approved_date)
+      goals        (created_at → goal_created_date)
+      checkins     (latest per goal → checkin_quarter, latest_actual_value)
+      checkin_comments  (latest matching sheet + quarter → comment fields)
+      audit_log    (per-field goal changes → last_modified_by/date)
+
+    Goals with no check-ins show "n/a" for actuals and "Not Yet" for the
+    checkin_quarter column.
+    """
+    db = get_database()
+
+    # ── 1. Fetch all sheets ──────────────────────────────────────────────────
+    sheets = [s async for s in db[COLLECTION_GOAL_SHEETS].find({})]
+
+    # ── 2. Fetch all goals (indexed by sheet_id) ─────────────────────────────
+    all_goals = [g async for g in db[COLLECTION_GOALS].find({})]
+    goals_by_sheet: dict[str, list] = {}
+    for g in all_goals:
+        sid = g.get("goal_sheet_id", "")
+        goals_by_sheet.setdefault(sid, []).append(g)
+
+    # ── 3. Collect every user id referenced anywhere we need a display name ──
+    user_ids: set[str] = set()
+    for s in sheets:
+        if s.get("employee_id"):
+            user_ids.add(s["employee_id"])
+        for entry in s.get("audit_log") or []:
+            if entry.get("actor_id"):
+                user_ids.add(entry["actor_id"])
+
+    # ── 4. Latest check-in per goal_id (sort descending by date once) ────────
+    checkins_by_goal: dict[str, dict] = {}
+    async for ci in db[COLLECTION_CHECKINS].find({}, sort=[("check_in_date", -1)]):
+        gid = str(ci.get("goal_id", ""))
+        if gid and gid not in checkins_by_goal:
+            checkins_by_goal[gid] = ci
+            if ci.get("manager_id"):
+                user_ids.add(ci["manager_id"])
+
+    # ── 5. Latest check-in comment per (sheet_id, quarter) ───────────────────
+    comments_by_sheet_quarter: dict[tuple[str, str], dict] = {}
+    async for c in db[COLLECTION_CHECKIN_COMMENTS].find({}, sort=[("created_at", -1)]):
+        key = (c.get("goal_sheet_id", ""), c.get("quarter", ""))
+        if key not in comments_by_sheet_quarter:
+            comments_by_sheet_quarter[key] = c
+            if c.get("author_id"):
+                user_ids.add(c["author_id"])
+
+    # ── 6. Latest goal-change audit log record per goal_id ──────────────────
+    latest_audit_by_goal: dict[str, dict] = {}
+    async for a in db[COLLECTION_AUDIT_LOG].find({}, sort=[("timestamp", -1)]):
+        gid = a.get("goal_id", "")
+        if gid and gid not in latest_audit_by_goal:
+            latest_audit_by_goal[gid] = a
+            if a.get("actor_id"):
+                user_ids.add(a["actor_id"])
+
+    # ── 7. Resolve user names in a single round-trip ─────────────────────────
+    user_map: dict[str, dict] = {}
+    if user_ids:
+        try:
+            object_ids = [ObjectId(uid) for uid in user_ids if ObjectId.is_valid(uid)]
+        except Exception:
+            object_ids = []
+        async for u in db[COLLECTION_USERS].find(
+            {"_id": {"$in": object_ids}},
+            {"_id": 1, "employee_id": 1, "name": 1, "department": 1, "role": 1},
+        ):
+            user_map[str(u["_id"])] = u
+
+    def user_name(uid: str | None) -> str:
+        if not uid:
+            return ""
+        return user_map.get(uid, {}).get("name") or uid
+
+    # ── 8. Build CSV ─────────────────────────────────────────────────────────
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+
+    header = [
+        # Achievement columns
+        "employee_id",
+        "employee_name",
+        "department",
+        "period_label",
+        "sheet_status",
+        "thrust_area",
+        "goal_description",
+        "uom_type",
+        "unit_of_measure",
+        "planned_target_value",
+        "latest_actual_value",
+        "achievement_pct",
+        "goal_score",
+        "weightage",
+        "overall_score",
+        # Audit-trail columns
+        "goal_id",
+        "goal_created_date",
+        "goal_approved_date",
+        "checkin_quarter",
+        "manager_checkin_comment",
+        "comment_author",
+        "comment_timestamp",
+        "last_modified_by",
+        "last_modified_date",
+    ]
+    writer.writerow(header)
+
+    for sheet in sheets:
+        sid = str(sheet["_id"])
+        uid = sheet.get("employee_id", "")
+        user = user_map.get(uid, {})
+
+        emp_id = user.get("employee_id", uid)
+        emp_name = user.get("name", "")
+        department = user.get("department", "")
+        period_label = sheet.get("period_label", "")
+        sheet_status = sheet.get("status", "")
+        overall_score = sheet.get("overall_score")
+        overall_score_str = str(overall_score) if overall_score is not None else "n/a"
+
+        # ── Sheet-level audit lookups (used by every goal in the sheet) ─────
+        sheet_audit_log: list = sheet.get("audit_log") or []
+
+        # goal_approved_date = timestamp of the 'LOCKED' entry per WORKFLOWS.md
+        # §Goal Lifecycle (Approved → Locked).  Fall back to APPROVED entry if
+        # the sheet has been unlocked back to APPROVED.
+        locked_entry = next(
+            (e for e in reversed(sheet_audit_log) if e.get("action") == "LOCKED"),
+            None,
+        )
+        if locked_entry is None:
+            locked_entry = next(
+                (e for e in reversed(sheet_audit_log) if e.get("action") == "APPROVED"),
+                None,
+            )
+        goal_approved_date = _iso(locked_entry.get("timestamp")) if locked_entry else ""
+
+        # Sheet-level "last modified" candidate = most recent audit_log entry
+        sheet_last_entry = sheet_audit_log[-1] if sheet_audit_log else None
+
+        goals = goals_by_sheet.get(sid, [])
+        if not goals:
+            # Sheet exists but has no goals — emit one summary row
+            sheet_last_by = user_name(sheet_last_entry.get("actor_id")) if sheet_last_entry else ""
+            sheet_last_date = _iso(sheet_last_entry.get("timestamp")) if sheet_last_entry else ""
+            writer.writerow([
+                emp_id, emp_name, department, period_label, sheet_status,
+                "", "", "", "", "", "n/a", "n/a", "n/a", "", overall_score_str,
+                "", "", goal_approved_date, "Not Yet",
+                "", "", "", sheet_last_by, sheet_last_date,
+            ])
+            continue
+
+        for goal in goals:
+            gid = str(goal["_id"])
+            ci = checkins_by_goal.get(gid)
+
+            # Achievement columns
+            actual_val = ci["actual_value"] if ci else "n/a"
+            achievement_pct = goal.get("achievement_pct")
+            goal_score = goal.get("goal_score")
+
+            # Audit columns
+            goal_created_date = _iso(goal.get("created_at"))
+
+            checkin_quarter = ci.get("period_label") if ci else "Not Yet"
+
+            # Latest comment for this sheet + this goal's check-in quarter.
+            # If there is no check-in yet, fall back to the most-recent
+            # comment on the whole sheet (across any quarter) so admins can
+            # still see manager guidance.
+            comment_doc = None
+            if ci:
+                comment_doc = comments_by_sheet_quarter.get((sid, ci.get("period_label", "")))
+            if comment_doc is None:
+                comment_doc = next(
+                    (
+                        v for k, v in comments_by_sheet_quarter.items()
+                        if k[0] == sid
+                    ),
+                    None,
+                )
+            manager_comment = (comment_doc.get("comment") if comment_doc else "") or ""
+            comment_author = ""
+            if comment_doc:
+                comment_author = (
+                    comment_doc.get("author_name")
+                    or user_name(comment_doc.get("author_id"))
+                )
+            comment_timestamp = _iso(comment_doc.get("created_at")) if comment_doc else ""
+
+            # last_modified — pick whichever is newer: the per-goal audit_log
+            # entry or the sheet-level audit_log entry.
+            goal_audit = latest_audit_by_goal.get(gid)
+            candidates = []
+            if goal_audit and goal_audit.get("timestamp"):
+                candidates.append((
+                    goal_audit["timestamp"],
+                    user_name(goal_audit.get("actor_id")),
+                ))
+            if sheet_last_entry and sheet_last_entry.get("timestamp"):
+                candidates.append((
+                    sheet_last_entry["timestamp"],
+                    user_name(sheet_last_entry.get("actor_id")),
+                ))
+            if candidates:
+                ts, actor_name = max(candidates, key=lambda x: x[0])
+                last_modified_by = actor_name
+                last_modified_date = _iso(ts)
+            else:
+                last_modified_by = ""
+                last_modified_date = ""
+
+            writer.writerow([
+                emp_id,
+                emp_name,
+                department,
+                period_label,
+                sheet_status,
+                goal.get("thrust_area", ""),
+                goal.get("description", ""),
+                goal.get("uom_type", ""),
+                goal.get("unit_of_measure", ""),
+                goal.get("target_value", ""),
+                actual_val,
+                str(achievement_pct) if achievement_pct is not None else "n/a",
+                str(goal_score) if goal_score is not None else "n/a",
+                goal.get("weightage", ""),
+                overall_score_str,
+                gid,
+                goal_created_date,
+                goal_approved_date,
+                checkin_quarter,
+                manager_comment,
+                comment_author,
+                comment_timestamp,
+                last_modified_by,
+                last_modified_date,
+            ])
+
+    output.seek(0)
+    filename = f"achievement_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Unlock — LOCKED → APPROVED  (Admin only)
+# Source: docs/ROLE_PERMISSIONS.md §Admin — "Unlock approved goals"
+#         docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
+# ---------------------------------------------------------------------------
+
+class UnlockRequest(BaseModel):
+    reason: Annotated[str, Field(min_length=1, max_length=1000)]
+
+
+@router.post("/{sheet_id}/unlock", response_model=GoalSheetPublic)
+async def unlock_goal_sheet(
+    sheet_id: str,
+    body: UnlockRequest,
+    current: TokenData = Depends(require_roles(UserRole.ADMIN)),
+):
+    """
+    Admin-only.  Transitions a LOCKED Goal Sheet back to APPROVED.
+
+    A mandatory `reason` is required and is stored in the embedded audit log
+    as an entry with action='UNLOCKED' (per docs/REPORTING_REQUIREMENTS.md
+    §Audit Log Rules — tracks who, what, and why).
+    """
+    db = get_database()
+    doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Goal Sheet not found")
+
+    if GoalSheetStatus(doc["status"]) != GoalSheetStatus.LOCKED:
+        raise HTTPException(
+            status_code=422,
+            detail="Only LOCKED Goal Sheets can be unlocked.",
+        )
+
+    audit_entry = AuditLogEntry(
+        action="UNLOCKED",
+        actor_id=current.user_id,
+        actor_role=current.role.value,
+        timestamp=datetime.utcnow(),
+        comment=body.reason,
+    ).model_dump()
+
+    await db[COLLECTION_GOAL_SHEETS].update_one(
+        {"_id": ObjectId(sheet_id)},
+        {
+            "$set": {"status": GoalSheetStatus.APPROVED, "updated_at": datetime.utcnow()},
+            "$push": {"audit_log": audit_entry},
+        },
+    )
+
+    doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
+    return _serialize(doc)
+
+
+# ---------------------------------------------------------------------------
+# Read (single sheet — MUST be declared after all fixed /export and /unlock paths)
+# ---------------------------------------------------------------------------
 
 @router.get("/{sheet_id}", response_model=GoalSheetPublic)
 async def get_goal_sheet(

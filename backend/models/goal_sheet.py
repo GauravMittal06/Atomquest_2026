@@ -52,7 +52,9 @@ ALLOWED_TRANSITIONS: dict[GoalSheetStatus, list[GoalSheetStatus]] = {
 # ---------------------------------------------------------------------------
 
 class AuditLogEntry(BaseModel):
-    action: GoalSheetStatus
+    # str (not GoalSheetStatus) so special actions like 'UNLOCKED' can be recorded
+    # alongside the normal workflow status transitions.
+    action: str
     actor_id: str
     actor_role: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)

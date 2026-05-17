@@ -2,23 +2,24 @@
  * Admin Dashboard
  *
  * Data sources:
- *   GET /api/users/team        — all employees (Admin sees everyone)
- *   GET /api/goalsheets/       — all goal sheets
- *   GET /api/shared-kpis/     — all shared KPIs pushed org-wide
+ *   GET /api/users/team                     — all employees (Admin sees everyone)
+ *   GET /api/goalsheets/                    — all goal sheets
+ *   GET /api/shared-kpis/                   — all shared KPIs pushed org-wide
  *
- * Includes PushSharedKpiForm to push departmental KPIs to employees
- * (docs/SHARED_GOALS.md + docs/ROLE_PERMISSIONS.md §Admin).
+ * Admin-only actions (docs/ROLE_PERMISSIONS.md §Admin):
+ *   GET /api/goalsheets/export/achievement  — CSV Planned vs Actual export
+ *   POST /api/goalsheets/{id}/unlock        — LOCKED → APPROVED with reason
  *
- * KPI cards per docs/REPORTING_REQUIREMENTS.md §6 (Admin Dashboard).
+ * KPI cards per docs/REPORTING_REQUIREMENTS.md §Completion Dashboard.
  */
-import { useCallback, useEffect, useState } from 'react'
-import { Activity, CheckCircle, Loader2, TrendingUp, Users } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Activity, CheckCircle, Download, Loader2, TrendingUp, Unlock, Users } from 'lucide-react'
 
 import api from '@/lib/api'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
-import type { GoalSheet, GoalSheetStatus, SharedKpi, SharedKpiPushResponse, User } from '@/types'
+import type { GoalSheet, GoalSheetStatus, SharedKpi, SharedKpiPushResponse, UnlockRequest, User } from '@/types'
 import { THRUST_AREA_LABELS } from '@/types'
 
 const STATUS_ORDER: GoalSheetStatus[] = ['DRAFT', 'SUBMITTED', 'RETURNED', 'APPROVED', 'LOCKED']
@@ -28,6 +29,18 @@ export function AdminDashboard() {
   const [allSheets, setAllSheets] = useState<GoalSheet[]>([])
   const [sharedKpis, setSharedKpis] = useState<SharedKpi[]>([])
   const [loading, setLoading] = useState(true)
+
+  // ── Export state ─────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  // ── Unlock state ─────────────────────────────────────────────────────────
+  const [unlockingId, setUnlockingId] = useState<string | null>(null)
+  const [unlockReasons, setUnlockReasons] = useState<Record<string, string>>({})
+  const [unlockLoading, setUnlockLoading] = useState<string | null>(null)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [unlockSuccess, setUnlockSuccess] = useState<string | null>(null)
+  const reasonRef = useRef<HTMLTextAreaElement | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -52,8 +65,71 @@ export function AdminDashboard() {
   }, [loadData])
 
   function handlePushSuccess(_res: SharedKpiPushResponse) {
-    // Refresh shared KPIs list after a successful push
     api.get<SharedKpi[]>('/shared-kpis/').then((r) => setSharedKpis(r.data)).catch(() => {})
+  }
+
+  // ── Export Achievement Report (Admin only) ───────────────────────────────
+  async function handleExportAchievement() {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const res = await api.get('/goalsheets/export/achievement', { responseType: 'blob' })
+      const blob = new Blob([res.data as BlobPart], { type: 'text/csv' })
+      const url = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      const disposition: string = (res.headers as Record<string, string>)['content-disposition'] ?? ''
+      const match = disposition.match(/filename="?([^"]+)"?/)
+      anchor.download = match ? match[1] : 'achievement_report.csv'
+      anchor.href = url
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(url)
+    } catch {
+      setExportError('Export failed. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // ── Unlock Goal Sheet (Admin only) ───────────────────────────────────────
+  function openUnlock(sheetId: string) {
+    setUnlockingId(sheetId)
+    setUnlockError(null)
+    setUnlockSuccess(null)
+    setTimeout(() => reasonRef.current?.focus(), 50)
+  }
+
+  function closeUnlock() {
+    setUnlockingId(null)
+    setUnlockError(null)
+  }
+
+  async function handleUnlock(sheetId: string) {
+    const reason = (unlockReasons[sheetId] ?? '').trim()
+    if (!reason) {
+      setUnlockError('A reason is required to unlock a Goal Sheet.')
+      return
+    }
+    setUnlockLoading(sheetId)
+    setUnlockError(null)
+    try {
+      const body: UnlockRequest = { reason }
+      await api.post(`/goalsheets/${sheetId}/unlock`, body)
+      setUnlockSuccess(`Sheet unlocked successfully.`)
+      setUnlockingId(null)
+      setUnlockReasons((prev) => { const n = { ...prev }; delete n[sheetId]; return n })
+      // Refresh sheets list
+      api.get<GoalSheet[]>('/goalsheets/').then((r) => setAllSheets(r.data)).catch(() => {})
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? 'Unlock failed.'
+          : 'Unlock failed.'
+      setUnlockError(typeof msg === 'string' ? msg : 'Unlock failed.')
+    } finally {
+      setUnlockLoading(null)
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -106,14 +182,38 @@ export function AdminDashboard() {
     )
   }
 
+  // ── Derived data ─────────────────────────────────────────────────────────
+  const lockedSheets = allSheets.filter((s) => s.status === 'LOCKED')
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Organisation Overview</h1>
-        <p className="text-sm text-slate-500 mt-1">FY 2025-26 · All departments</p>
+
+      {/* ── Page header + Export button ── */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Organisation Overview</h1>
+          <p className="text-sm text-slate-500 mt-1">FY 2025-26 · All departments</p>
+        </div>
+
+        {/* Export Achievement Report — Admin only (docs/ROLE_PERMISSIONS.md §Admin) */}
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleExportAchievement}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+          >
+            {exporting
+              ? <Loader2 size={15} className="animate-spin" />
+              : <Download size={15} />}
+            {exporting ? 'Exporting…' : 'Export Achievement Report'}
+          </button>
+          {exportError && (
+            <p className="text-xs text-red-600">{exportError}</p>
+          )}
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label="Total Employees"
@@ -209,7 +309,99 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {/* Status breakdown + Dept summary */}
+      {/* ── Unlock Goal Sheet — Admin only (docs/ROLE_PERMISSIONS.md §Admin) ── */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b bg-slate-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Unlock size={16} className="text-purple-600" />
+            <h2 className="font-semibold text-slate-900">Unlock Goal Sheets</h2>
+          </div>
+          <span className="text-xs text-slate-400">{lockedSheets.length} locked</span>
+        </div>
+
+        {unlockSuccess && (
+          <div className="mx-5 mt-4 rounded-lg bg-green-50 border border-green-200 px-4 py-2.5 text-sm text-green-700">
+            {unlockSuccess}
+          </div>
+        )}
+
+        {lockedSheets.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-slate-400 italic text-center">
+            No locked goal sheets at this time.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {lockedSheets.map((sheet) => {
+              const emp = allUsers.find((u) => u._id === sheet.employee_id)
+              const isOpen = unlockingId === sheet._id
+              const isSubmitting = unlockLoading === sheet._id
+              return (
+                <li key={sheet._id} className="px-5 py-4">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <p className="font-medium text-slate-900 text-sm">
+                        {emp?.name ?? sheet.employee_id}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {emp?.department} · {sheet.period_label}
+                        {sheet.overall_score != null && (
+                          <span className="ml-2 font-semibold text-slate-700">
+                            Score: {sheet.overall_score}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => isOpen ? closeUnlock() : openUnlock(sheet._id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 transition-colors"
+                    >
+                      <Unlock size={13} />
+                      {isOpen ? 'Cancel' : 'Unlock'}
+                    </button>
+                  </div>
+
+                  {/* Inline reason form */}
+                  {isOpen && (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Reason for unlocking
+                        <span className="text-red-500 ml-0.5">*</span>
+                      </label>
+                      <textarea
+                        ref={reasonRef}
+                        rows={3}
+                        value={unlockReasons[sheet._id] ?? ''}
+                        onChange={(e) =>
+                          setUnlockReasons((prev) => ({ ...prev, [sheet._id]: e.target.value }))
+                        }
+                        placeholder="Describe why this sheet needs to be unlocked…"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                      />
+                      {unlockError && unlockingId === sheet._id && (
+                        <p className="text-xs text-red-600">{unlockError}</p>
+                      )}
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleUnlock(sheet._id)}
+                          disabled={isSubmitting}
+                          className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-60 transition-colors"
+                        >
+                          {isSubmitting
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Unlock size={14} />}
+                          {isSubmitting ? 'Unlocking…' : 'Confirm Unlock'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* ── Status breakdown + Dept summary ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b">

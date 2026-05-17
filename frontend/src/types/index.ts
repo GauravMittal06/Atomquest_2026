@@ -160,11 +160,17 @@ export const STATUS_BADGE_STYLES: Record<GoalSheetStatus, string> = {
 }
 
 export interface AuditLogEntry {
-  action: GoalSheetStatus
+  /** Normally a GoalSheetStatus value; 'UNLOCKED' is also valid (Admin override). */
+  action: GoalSheetStatus | 'UNLOCKED'
   actor_id: string
   actor_role: string
   timestamp: string
   comment?: string
+}
+
+/** Body for POST /api/goalsheets/{sheet_id}/unlock */
+export interface UnlockRequest {
+  reason: string
 }
 
 export interface GoalSheet {

@@ -45,7 +45,21 @@ async def get_my_profile(current: TokenData = Depends(get_current_user)):
     doc = await db[COLLECTION_USERS].find_one({"_id": ObjectId(current.user_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="User not found")
-    return _serialize(doc)
+    _serialize(doc)
+
+    # For EMPLOYEE users, resolve the L1 manager's full name in a single extra
+    # lookup so the frontend never has to make a second round-trip.
+    manager_id_raw = doc.get("manager_id")
+    if manager_id_raw:
+        try:
+            mgr_doc = await db[COLLECTION_USERS].find_one(
+                {"_id": ObjectId(manager_id_raw)}, {"name": 1}
+            )
+            doc["reporting_to_name"] = mgr_doc["name"] if mgr_doc else None
+        except Exception:
+            doc["reporting_to_name"] = None
+
+    return doc
 
 
 @router.patch("/me", response_model=UserPublic)

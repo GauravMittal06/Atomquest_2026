@@ -10,5 +10,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
 
+    # DEV-only: enables POST /api/auth/mock-login used by the topbar User
+    # Impersonation Selector. MUST be set to false in production.
+    enable_mock_login: bool = True
+
 
 settings = Settings()

@@ -121,6 +121,8 @@ class UserPublic(UserBase):
     """Safe response model — no password hash."""
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
     created_at: Optional[datetime] = None
+    # Resolved at the API layer for EMPLOYEE users; None for MANAGER / ADMIN.
+    reporting_to_name: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 

@@ -6,15 +6,15 @@ Validates Thrust Area, UoM, Target, and Weightage per docs/VALIDATION_RULES.md.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, List
+from typing import Annotated, Any, List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
-from auth import get_current_user
+from auth import get_current_user, require_roles
 from database import COLLECTION_GOAL_SHEETS, COLLECTION_GOALS, get_database
-from models.goal import GoalCreate, GoalPublic, GoalUpdate
+from models.goal import GoalCreate, GoalPublic, GoalUpdate, UoMType
 from models.goal_sheet import ALLOWED_TRANSITIONS, AuditLogEntry, GoalSheetPublic, GoalSheetStatus, GoalSheetStatusUpdate
 from models.user import TokenData, UserRole
 
@@ -345,3 +345,113 @@ async def delete_goal(
     await _get_editable_sheet(goal["goal_sheet_id"], current.user_id, current.role, db)
     await db[COLLECTION_GOALS].delete_one({"_id": ObjectId(goal_id)})
     await _recalculate_sheet_totals(goal["goal_sheet_id"], db)
+
+
+# ---------------------------------------------------------------------------
+# Manager L1: inline-edit target_value and weightage on SUBMITTED sheets
+# Source: docs/ROLE_PERMISSIONS.md §Manager — "Edit targets and weightages"
+# ---------------------------------------------------------------------------
+
+class ManagerGoalUpdate(BaseModel):
+    """
+    Manager-only partial update.  Only target_value and weightage are
+    permitted per docs/ROLE_PERMISSIONS.md §Manager.
+    """
+    target_value: Optional[Any] = None
+    weightage: Optional[Annotated[float, Field(ge=10.0, le=50.0)]] = None
+
+
+@router.patch("/manager/{goal_id}", response_model=GoalPublic)
+async def manager_update_goal(
+    goal_id: str,
+    body: ManagerGoalUpdate,
+    current: TokenData = Depends(require_roles(UserRole.MANAGER, UserRole.ADMIN)),
+):
+    """
+    Manager L1 (or Admin) may edit `target_value` and `weightage` on goals
+    whose parent GoalSheet is currently SUBMITTED.
+
+    Enforces:
+      - docs/ROLE_PERMISSIONS.md §Manager — "Edit targets and weightages"
+      - docs/VALIDATION_RULES.md — weightage 10 %–50 %, target validated
+        against existing uom_type
+      - Access gate: MANAGER callers must own the employee (manager_id match)
+    """
+    db = get_database()
+
+    goal = await db[COLLECTION_GOALS].find_one({"_id": ObjectId(goal_id)})
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    sheet = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(goal["goal_sheet_id"])})
+    if not sheet:
+        raise HTTPException(status_code=404, detail="Goal Sheet not found")
+
+    # Only SUBMITTED sheets are editable by a manager (ROLE_PERMISSIONS.md)
+    if GoalSheetStatus(sheet["status"]) != GoalSheetStatus.SUBMITTED:
+        raise HTTPException(
+            status_code=422,
+            detail="Manager edits are only permitted on SUBMITTED Goal Sheets.",
+        )
+
+    # Manager must own this employee (employee's manager_id must equal current.user_id)
+    if current.role == UserRole.MANAGER:
+        employee = await db["users"].find_one({"_id": ObjectId(sheet["employee_id"])})
+        if not employee or employee.get("manager_id") != current.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: this employee does not report to you.",
+            )
+
+    update_data: dict = {}
+
+    # --- Weightage validation (VALIDATION_RULES.md: 10 % – 50 %) ---
+    if body.weightage is not None:
+        update_data["weightage"] = body.weightage
+
+    # --- Target validation against existing uom_type ---
+    if body.target_value is not None:
+        uom = goal.get("uom_type")
+        if uom == UoMType.NUMERIC:
+            try:
+                val = float(body.target_value)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_value must be a positive number for Numeric goals.",
+                )
+            if val <= 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_value must be > 0 for Numeric goals.",
+                )
+            update_data["target_value"] = round(val, 4)
+        elif uom == UoMType.TIMELINE:
+            val = str(body.target_value).strip()
+            if not val or len(val) > 500:
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_value must be a non-empty string (max 500 chars) for Timeline goals.",
+                )
+            update_data["target_value"] = val
+        else:  # UoMType.ZERO — binary Yes / No
+            val = str(body.target_value).strip()
+            if val not in ("Yes", "No"):
+                raise HTTPException(
+                    status_code=422,
+                    detail='target_value must be "Yes" or "No" for Zero/binary goals.',
+                )
+            update_data["target_value"] = val
+
+    if not update_data:
+        # Nothing changed — return current state unchanged
+        return _serialize(goal)
+
+    update_data["updated_at"] = datetime.utcnow()
+    await db[COLLECTION_GOALS].update_one(
+        {"_id": ObjectId(goal_id)}, {"$set": update_data}
+    )
+    await _recalculate_sheet_totals(goal["goal_sheet_id"], db)
+
+    doc = await db[COLLECTION_GOALS].find_one({"_id": ObjectId(goal_id)})
+    return _serialize(doc)

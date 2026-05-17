@@ -215,3 +215,88 @@ async def delete_goal_sheet(
 
     await db[COLLECTION_GOAL_SHEETS].delete_one({"_id": ObjectId(sheet_id)})
     await db[COLLECTION_GOALS].delete_many({"goal_sheet_id": sheet_id})
+
+
+# ---------------------------------------------------------------------------
+# Manager L1: Approve — SUBMITTED → APPROVED → LOCKED (atomic, two audit entries)
+# Source: docs/WORKFLOWS.md §Goal Lifecycle, docs/ROLE_PERMISSIONS.md §Manager
+# ---------------------------------------------------------------------------
+
+@router.patch("/{sheet_id}/approve", response_model=GoalSheetPublic)
+async def manager_approve_goal_sheet(
+    sheet_id: str,
+    current: TokenData = Depends(require_roles(UserRole.MANAGER, UserRole.ADMIN)),
+):
+    """
+    Manager L1 (or Admin) approves a SUBMITTED Goal Sheet.
+
+    Workflow (docs/WORKFLOWS.md): SUBMITTED → APPROVED → LOCKED
+    Both transitions are recorded as separate audit-log entries in one
+    atomic DB write so the history remains complete.
+
+    Guards:
+      - Caller must be MANAGER or ADMIN
+      - Sheet must be in SUBMITTED status
+      - MANAGER callers: employee must report to this manager (manager_id)
+      - Total weightage must equal exactly 100 % (VALIDATION_RULES.md §4)
+    """
+    db = get_database()
+    doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Goal Sheet not found")
+
+    if GoalSheetStatus(doc["status"]) != GoalSheetStatus.SUBMITTED:
+        raise HTTPException(
+            status_code=422,
+            detail="Only SUBMITTED Goal Sheets can be approved.",
+        )
+
+    # Manager access: employee must report to this manager
+    if current.role == UserRole.MANAGER:
+        employee = await db["users"].find_one({"_id": ObjectId(doc["employee_id"])})
+        if not employee or employee.get("manager_id") != current.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: this employee does not report to you.",
+            )
+
+    # Weightage == 100 % (VALIDATION_RULES.md §4)
+    if round(doc.get("total_weightage", 0.0), 2) != 100.0:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Total weightage must equal 100 % before approving. "
+                f"Current: {doc.get('total_weightage')} %"
+            ),
+        )
+
+    now = datetime.utcnow()
+
+    # Two audit entries: APPROVED then LOCKED — both recorded atomically
+    approved_entry = AuditLogEntry(
+        action=GoalSheetStatus.APPROVED,
+        actor_id=current.user_id,
+        actor_role=current.role.value,
+        timestamp=now,
+    ).model_dump()
+    locked_entry = AuditLogEntry(
+        action=GoalSheetStatus.LOCKED,
+        actor_id=current.user_id,
+        actor_role=current.role.value,
+        timestamp=now,
+    ).model_dump()
+
+    await db[COLLECTION_GOAL_SHEETS].update_one(
+        {"_id": ObjectId(sheet_id)},
+        {
+            "$set": {
+                "status": GoalSheetStatus.LOCKED,
+                "reviewed_by": current.user_id,
+                "updated_at": now,
+            },
+            "$push": {"audit_log": {"$each": [approved_entry, locked_entry]}},
+        },
+    )
+
+    doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
+    return _serialize(doc)

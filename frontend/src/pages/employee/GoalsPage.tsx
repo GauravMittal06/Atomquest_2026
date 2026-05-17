@@ -32,7 +32,8 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
-import { THRUST_AREA_LABELS, type Goal, type GoalSheet } from '@/types'
+import { useCycleStatus } from '@/lib/useCycleStatus'
+import { isCheckInWindowOpen, THRUST_AREA_LABELS, type Goal, type GoalSheet } from '@/types'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,6 +60,8 @@ export function GoalsPage() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  const { status: cycleStatus } = useCycleStatus()
 
   // Inline weightage editing for shared goals (SHARED_GOALS.md — only field employees can change)
   const [sharedWeightageEdits, setSharedWeightageEdits] = useState<Record<string, string>>({})
@@ -271,8 +274,10 @@ export function GoalsPage() {
               ? 'Awaiting review'
               : sheet.status === 'RETURNED'
               ? 'Needs revision'
-              : sheet.status === 'APPROVED'
-              ? 'Check-ins enabled'
+              : sheet.status === 'APPROVED' || sheet.status === 'LOCKED'
+              ? cycleStatus && isCheckInWindowOpen(cycleStatus.state)
+                ? `Check-ins open — ${cycleStatus.active_quarter}`
+                : 'Check-ins closed'
               : 'Final — locked'
           }
           ok={sheet.status === 'APPROVED' || sheet.status === 'SUBMITTED'}

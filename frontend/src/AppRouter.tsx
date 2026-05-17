@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import {
+  Activity,
   BarChart2,
   CheckSquare,
   ClipboardList,
   LayoutDashboard,
   Settings,
+  ShieldCheck,
   Users,
 } from 'lucide-react'
 
@@ -21,6 +23,9 @@ import { ManagerDashboard } from '@/pages/manager/Dashboard'
 import { ReviewPage } from '@/pages/manager/ReviewPage'
 import { CheckInReviewPage } from '@/pages/manager/CheckInReviewPage'
 import { AdminDashboard } from '@/pages/admin/Dashboard'
+import { AdminCompletionDashboard } from '@/pages/admin/CompletionDashboard'
+import { AdminGoalSheetsPage } from '@/pages/admin/GoalSheetsPage'
+import { AdminReportsPage } from '@/pages/admin/ReportsPage'
 
 const employeeNav = [
   { label: 'Dashboard', to: '/employee/dashboard', icon: <LayoutDashboard size={16} /> },
@@ -39,9 +44,10 @@ const managerNav = [
 
 const adminNav = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: <LayoutDashboard size={16} /> },
-  { label: 'Users', to: '/admin/users', icon: <Users size={16} /> },
-  { label: 'All Goal Sheets', to: '/admin/goalsheets', icon: <ClipboardList size={16} /> },
+  { label: 'Completion', to: '/admin/completion', icon: <Activity size={16} /> },
+  { label: 'All Goal Sheets', to: '/admin/goalsheets', icon: <ShieldCheck size={16} /> },
   { label: 'Reports', to: '/admin/reports', icon: <BarChart2 size={16} /> },
+  { label: 'Users', to: '/admin/users', icon: <Users size={16} /> },
   { label: 'Settings', to: '/admin/settings', icon: <Settings size={16} /> },
 ]
 
@@ -83,9 +89,10 @@ export function AppRouter() {
         {/* Admin */}
         <Route element={<AppShell role="ADMIN" navItems={adminNav} />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/completion" element={<AdminCompletionDashboard />} />
+          <Route path="/admin/goalsheets" element={<AdminGoalSheetsPage />} />
+          <Route path="/admin/reports" element={<AdminReportsPage />} />
           <Route path="/admin/users" element={<ComingSoon title="User Management" />} />
-          <Route path="/admin/goalsheets" element={<ComingSoon title="All Goal Sheets" />} />
-          <Route path="/admin/reports" element={<ComingSoon title="Organisation Reports" />} />
           <Route path="/admin/settings" element={<ComingSoon title="System Settings" />} />
         </Route>
       </Route>

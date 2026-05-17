@@ -390,6 +390,59 @@ export interface CheckinCommentCreate {
 }
 
 // ---------------------------------------------------------------------------
+// Admin Completion Dashboard — docs/REPORTING_REQUIREMENTS.md §Completion Dashboard
+//   served by GET /api/admin/dashboard/completion (Admin-only)
+// ---------------------------------------------------------------------------
+
+export interface EmployeeSubmissionMetric {
+  total_employees: number
+  submitted_count: number
+  pending_count: number
+  submission_pct: number
+}
+
+export interface ManagerCheckinMetric {
+  total_managers: number
+  completed_count: number
+  pending_count: number
+  completion_pct: number
+  /** Active quarter from cycle-status, or null between windows. */
+  active_quarter: PeriodLabel | null
+  scope_label: string
+}
+
+export interface CheckinSummaryMetric {
+  completed_checkins: number
+  pending_checkins: number
+  manager_reviewed_checkins: number
+  manager_review_completion_pct: number
+}
+
+export interface ThrustAreaDistributionItem {
+  thrust_area: ThrustArea
+  label: string
+  count: number
+}
+
+export interface QuarterlyTrendPoint {
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4'
+  planned: number
+  actual: number
+  checkin_count: number
+}
+
+export interface CompletionDashboardData {
+  /** ISO timestamp the snapshot was generated. */
+  as_of: string
+  active_quarter: PeriodLabel | null
+  employee_submission: EmployeeSubmissionMetric
+  manager_checkins: ManagerCheckinMetric
+  checkin_summary: CheckinSummaryMetric
+  thrust_area_distribution: ThrustAreaDistributionItem[]
+  quarterly_trend: QuarterlyTrendPoint[]
+}
+
+// ---------------------------------------------------------------------------
 // API response wrappers
 // ---------------------------------------------------------------------------
 

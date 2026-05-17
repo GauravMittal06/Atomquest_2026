@@ -408,9 +408,10 @@ async def export_achievement_report(
 
 
 # ---------------------------------------------------------------------------
-# Unlock — LOCKED → APPROVED  (Admin only)
+# Unlock — LOCKED → RETURNED  (Admin only)
 # Source: docs/ROLE_PERMISSIONS.md §Admin — "Unlock approved goals"
 #         docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
+#         docs/WORKFLOWS.md §Goal Lifecycle (RETURNED restores employee edit access)
 # ---------------------------------------------------------------------------
 
 class UnlockRequest(BaseModel):
@@ -424,11 +425,20 @@ async def unlock_goal_sheet(
     current: TokenData = Depends(require_roles(UserRole.ADMIN)),
 ):
     """
-    Admin-only.  Transitions a LOCKED Goal Sheet back to APPROVED.
+    Admin-only.  Transitions a LOCKED Goal Sheet to RETURNED.
 
-    A mandatory `reason` is required and is stored in the embedded audit log
-    as an entry with action='UNLOCKED' (per docs/REPORTING_REQUIREMENTS.md
-    §Audit Log Rules — tracks who, what, and why).
+    Workflow (docs/WORKFLOWS.md §Goal Lifecycle): LOCKED → RETURNED
+    RETURNED restores full employee edit + resubmission capability
+    (RETURNED → SUBMITTED → APPROVED → LOCKED is the normal path back).
+
+    A mandatory `reason` is required and is persisted in:
+      - embedded `audit_log` as action='UNLOCKED' (docs/REPORTING_REQUIREMENTS.md
+        §Audit Log Rules — who, previous value, new value, why, timestamp)
+      - `review_comment` field — surfaces the reason in the Employee dashboard
+        RETURNED banner so the employee immediately sees why the sheet was reopened
+      - `reviewed_by` field — identifies the Admin who performed the action
+
+    Permission: Admin-only (docs/ROLE_PERMISSIONS.md §Admin — "Unlock approved goals").
     """
     db = get_database()
     doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
@@ -441,24 +451,121 @@ async def unlock_goal_sheet(
             detail="Only LOCKED Goal Sheets can be unlocked.",
         )
 
+    now = datetime.utcnow()
+
+    # Audit entry records the UNLOCKED action with full governance metadata
     audit_entry = AuditLogEntry(
         action="UNLOCKED",
         actor_id=current.user_id,
         actor_role=current.role.value,
-        timestamp=datetime.utcnow(),
+        timestamp=now,
         comment=body.reason,
     ).model_dump()
 
     await db[COLLECTION_GOAL_SHEETS].update_one(
         {"_id": ObjectId(sheet_id)},
         {
-            "$set": {"status": GoalSheetStatus.APPROVED, "updated_at": datetime.utcnow()},
+            "$set": {
+                # LOCKED → RETURNED restores employee edit + resubmission capability
+                "status": GoalSheetStatus.RETURNED,
+                "review_comment": body.reason,
+                "reviewed_by": current.user_id,
+                "updated_at": now,
+            },
             "$push": {"audit_log": audit_entry},
         },
     )
 
     doc = await db[COLLECTION_GOAL_SHEETS].find_one({"_id": ObjectId(sheet_id)})
     return _serialize(doc)
+
+
+# ---------------------------------------------------------------------------
+# Unlock History — Admin governance feed
+# Source: docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
+#         docs/ROLE_PERMISSIONS.md §Admin — "View audit logs"
+# ---------------------------------------------------------------------------
+
+@router.get("/unlock-history", response_model=list)
+async def get_unlock_history(
+    current: TokenData = Depends(require_roles(UserRole.ADMIN)),
+):
+    """
+    Admin-only.  Returns all goal sheets that have at least one UNLOCKED
+    audit-log entry, ordered by most-recent unlock timestamp descending.
+
+    Each item includes:
+      - sheet id, employee info, period label, current status
+      - the most-recent UNLOCKED audit entry (actor, reason, timestamp)
+
+    Used by the Admin Governance / Unlock History feed on the dashboard.
+    """
+    from bson import ObjectId as BsonObjectId
+
+    db = get_database()
+
+    # Sheets with any UNLOCKED entry
+    sheets = [
+        s async for s in db[COLLECTION_GOAL_SHEETS].find(
+            {"audit_log.action": "UNLOCKED"}
+        )
+    ]
+
+    # Collect unique user IDs we need to resolve
+    user_ids: set[str] = set()
+    for s in sheets:
+        if s.get("employee_id"):
+            user_ids.add(s["employee_id"])
+        for entry in s.get("audit_log") or []:
+            if entry.get("action") == "UNLOCKED" and entry.get("actor_id"):
+                user_ids.add(entry["actor_id"])
+
+    # Batch-resolve names
+    user_map: dict[str, dict] = {}
+    if user_ids:
+        valid_oids = [BsonObjectId(uid) for uid in user_ids if BsonObjectId.is_valid(uid)]
+        async for u in db[COLLECTION_USERS].find(
+            {"_id": {"$in": valid_oids}},
+            {"_id": 1, "name": 1, "employee_id": 1, "department": 1},
+        ):
+            user_map[str(u["_id"])] = u
+
+    results = []
+    for s in sheets:
+        # Find the most recent UNLOCKED entry
+        unlocked_entries = [
+            e for e in (s.get("audit_log") or []) if e.get("action") == "UNLOCKED"
+        ]
+        if not unlocked_entries:
+            continue
+        latest_unlock = max(
+            unlocked_entries,
+            key=lambda e: e.get("timestamp") or datetime.min,
+        )
+
+        emp = user_map.get(s.get("employee_id", ""), {})
+        actor = user_map.get(latest_unlock.get("actor_id", ""), {})
+
+        results.append({
+            "sheet_id": str(s["_id"]),
+            "employee_id": s.get("employee_id", ""),
+            "employee_name": emp.get("name", s.get("employee_id", "")),
+            "department": emp.get("department", ""),
+            "period_label": s.get("period_label", ""),
+            "current_status": s.get("status", ""),
+            "unlock_reason": latest_unlock.get("comment", ""),
+            "unlocked_by_id": latest_unlock.get("actor_id", ""),
+            "unlocked_by_name": actor.get("name", latest_unlock.get("actor_id", "")),
+            "unlocked_at": latest_unlock.get("timestamp"),
+            "total_unlocks": len(unlocked_entries),
+        })
+
+    # Sort by most recent unlock descending
+    results.sort(
+        key=lambda r: r["unlocked_at"] or datetime.min,
+        reverse=True,
+    )
+    return results
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import close_db, connect_db
 from routers import (
+    admin_dashboard_router,
     auth_router,
     checkin_comments_router,
     checkins_router,
@@ -50,6 +51,7 @@ app.include_router(checkins_router)
 app.include_router(checkin_comments_router)
 app.include_router(shared_kpis_router)
 app.include_router(system_router)
+app.include_router(admin_dashboard_router)
 
 
 @app.get("/health", tags=["Health"])

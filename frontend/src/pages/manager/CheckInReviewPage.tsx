@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { calculateProgress } from '@/lib/progressCalculator'
 import { useCycleStatus } from '@/lib/useCycleStatus'
 import { CycleStatusBanner } from '@/components/checkins/CycleStatusBanner'
@@ -243,7 +244,8 @@ export function CheckInReviewPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Team Check-In Review</h1>
+          <p className="breadcrumb">Manager · Check-ins</p>
+          <h1 className="page-title">Team Check-In Review</h1>
           <p className="mt-1 text-sm text-slate-500">
             Planned vs. Actual achievements per quarter · structured review notes
           </p>
@@ -319,7 +321,7 @@ export function CheckInReviewPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
         {/* Team rail */}
-        <aside className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <aside className="card overflow-hidden p-0">
           <div className="border-b bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Direct Reports
           </div>
@@ -382,7 +384,7 @@ export function CheckInReviewPage() {
         {/* Selected member detail */}
         <section className="space-y-4">
           {!active || !active.sheet ? (
-            <div className="rounded-xl border bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
+            <div className="card rounded-lg p-10 text-center text-sm text-slate-400 shadow-sm">
               Select a team member to view their Planned vs Actual breakdown.
             </div>
           ) : (
@@ -436,7 +438,7 @@ function MemberDetail({
   return (
     <>
       {/* Header card */}
-      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+      <div className="card overflow-hidden p-0">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-slate-50 px-5 py-4">
           <div>
             <p className="text-base font-semibold text-slate-900">{user.name}</p>
@@ -463,15 +465,15 @@ function MemberDetail({
         {/* Planned vs Actual */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 uppercase tracking-wide">
               <tr>
-                <th className="px-4 py-3 text-left">Goal</th>
-                <th className="px-4 py-3 text-center">UoM</th>
-                <th className="px-4 py-3 text-right">Planned (Target)</th>
-                <th className="px-4 py-3 text-right">Actual ({quarter})</th>
-                <th className="px-4 py-3 text-right">Achievement</th>
-                <th className="px-4 py-3 text-right">Wt. Score</th>
-                <th className="px-4 py-3 text-right">Self ★</th>
+                <th className="th">Goal</th>
+                <th className="th">UoM</th>
+                <th className="th">Planned (Target)</th>
+                <th className="th">Actual ({quarter})</th>
+                <th className="th">Achievement</th>
+                <th className="th">Wt. Score</th>
+                <th className="th">Self ★</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -489,8 +491,8 @@ function MemberDetail({
                 const hasRemarks = !!(checkin?.remarks || checkin?.manager_remark)
                 return (
                   <Fragment key={goal._id}>
-                    <tr className={hasRemarks ? 'bg-white' : 'hover:bg-slate-50/60'}>
-                      <td className="px-4 py-3 align-top">
+                    <tr className="tr">
+                      <td className="td">
                         <p className="font-medium text-slate-800 line-clamp-2">
                           {goal.description}
                         </p>
@@ -498,18 +500,18 @@ function MemberDetail({
                           {THRUST_AREA_LABELS[goal.thrust_area]}
                         </p>
                       </td>
-                      <td className="px-4 py-3 text-center text-xs text-slate-500">
+                      <td className="td">
                         {goal.uom_type === 'Numeric' ? 'Max' : goal.uom_type}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700">
+                      <td className="td">
                         {String(goal.target_value)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-800">
+                      <td className="td">
                         {actual !== undefined && actual !== null && actual !== ''
                           ? String(actual)
                           : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="td">
                         {progress.achievementPct === null ? (
                           <span className="text-slate-300">—</span>
                         ) : (
@@ -526,12 +528,12 @@ function MemberDetail({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                      <td className="td">
                         {progress.goalScore !== null
                           ? progress.goalScore.toFixed(2)
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="td">
                         {checkin?.self_rating != null
                           ? `${checkin.self_rating}/5`
                           : '—'}
@@ -540,8 +542,8 @@ function MemberDetail({
 
                     {/* Remarks sub-row — employee note + manager note */}
                     {hasRemarks && (
-                      <tr className="bg-slate-50/50">
-                        <td colSpan={7} className="px-5 pb-3 pt-0">
+                      <tr className="tr">
+                        <td colSpan={7} className="td">
                           <div className="flex flex-wrap gap-3">
                             {checkin?.remarks && (
                               <div className="flex-1 min-w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2">
@@ -578,7 +580,7 @@ function MemberDetail({
       </div>
 
       {/* ── Structured Check-in Comment composer ── */}
-      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+      <div className="card overflow-hidden p-0">
         <div className="flex items-center justify-between border-b bg-slate-50 px-5 py-3">
           <div className="flex items-center gap-2">
             <MessageSquarePlus size={16} className="text-blue-500" />
@@ -596,6 +598,7 @@ function MemberDetail({
             onChange={(e) => onDraftChange(e.target.value)}
             rows={4}
             placeholder={`Document your review for ${user.name.split(' ')[0]} in ${quarter}. Highlight strengths, risks, and the next steps you've agreed on.`}
+            className={cn('input resize-none min-h-[6rem]', postError && 'input-error')}
           />
           {postError && (
             <p className="text-xs font-medium text-red-500">{postError}</p>
@@ -607,6 +610,7 @@ function MemberDetail({
             <Button
               variant="primary"
               size="sm"
+              className="btn-primary btn-sm"
               disabled={isPosting || draft.trim().length === 0}
               onClick={onPostComment}
             >

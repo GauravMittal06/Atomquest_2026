@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import {
   THRUST_AREA_LABELS,
   type Goal,
@@ -355,12 +356,14 @@ export function ReviewPage() {
         <div>
           <button
             onClick={() => navigate('/manager/dashboard')}
-            className="mb-2 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+            type="button"
+            className="btn-outline mb-2 flex items-center gap-1 self-start text-sm py-2"
           >
             <ArrowLeft size={14} />
             Back to Team
           </button>
-          <h1 className="text-2xl font-bold text-slate-900">Review Goal Sheet</h1>
+          <p className="breadcrumb">Manager · Review</p>
+          <h1 className="page-title">Review Goal Sheet</h1>
           <p className="mt-1 text-sm text-slate-500">
             {employeeName}
             {employee?.department ? ` · ${employee.department}` : ''}
@@ -432,7 +435,7 @@ export function ReviewPage() {
       </div>
 
       {/* ── Goals table with inline editing ── */}
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+      <div className="card overflow-hidden p-0">
         <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50">
           <h2 className="font-semibold text-slate-900">Goal Details</h2>
           {isSubmittedSheet && (
@@ -443,17 +446,17 @@ export function ReviewPage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+            <thead className="bg-slate-50 uppercase tracking-wide">
               <tr>
-                <th className="px-4 py-3 text-left w-6">#</th>
-                <th className="px-4 py-3 text-left">Thrust Area</th>
-                <th className="px-4 py-3 text-left">Description</th>
-                <th className="px-4 py-3 text-center w-24">Type</th>
-                <th className="px-4 py-3 text-left w-28">UoM</th>
-                <th className="px-4 py-3 text-right w-44">Target</th>
-                <th className="px-4 py-3 text-right w-32">Wt. %</th>
+                <th className="th">#</th>
+                <th className="th">Thrust Area</th>
+                <th className="th">Description</th>
+                <th className="th">Type</th>
+                <th className="th">UoM</th>
+                <th className="th">Target</th>
+                <th className="th">Wt. %</th>
                 {isSubmittedSheet && (
-                  <th className="px-4 py-3 text-center w-20">Save</th>
+                  <th className="th">Save</th>
                 )}
               </tr>
             </thead>
@@ -469,24 +472,18 @@ export function ReviewPage() {
                 const wasSaved = savedGoals.has(goal._id)
 
                 return (
-                  <tr
-                    key={goal._id}
-                    className={[
-                      'transition-colors',
-                      isDirtyRow ? 'bg-amber-50/40' : wasSaved ? 'bg-green-50/40' : 'hover:bg-slate-50',
-                    ].join(' ')}
-                  >
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                  <tr key={goal._id} className="tr">
+                    <td className="td">{i + 1}</td>
 
-                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+                    <td className="td">
                       {THRUST_AREA_LABELS[goal.thrust_area]}
                     </td>
 
-                    <td className="px-4 py-3 text-slate-800 max-w-xs">
+                    <td className="td">
                       <span className="line-clamp-2">{goal.description}</span>
                     </td>
 
-                    <td className="px-4 py-3 text-center">
+                    <td className="td">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                           goal.uom_type === 'Numeric'
@@ -500,12 +497,12 @@ export function ReviewPage() {
                       </span>
                     </td>
 
-                    <td className="px-4 py-3 text-slate-500 text-xs">
+                    <td className="td">
                       {goal.unit_of_measure}
                     </td>
 
                     {/* Target — editable when SUBMITTED */}
-                    <td className="px-4 py-3">
+                    <td className="td">
                       {isSubmittedSheet ? (
                         <div className="flex flex-col items-end gap-0.5">
                           {goal.uom_type === 'Zero' ? (
@@ -514,7 +511,10 @@ export function ReviewPage() {
                               onChange={(e) =>
                                 handleEditChange(goal._id, 'target_value', e.target.value)
                               }
-                              className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-right focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                              className={cn(
+                                'input h-auto py-1.5 text-right text-xs',
+                                errs.target_value && 'input-error',
+                              )}
                             >
                               <option value="Yes">Yes</option>
                               <option value="No">No</option>
@@ -525,9 +525,10 @@ export function ReviewPage() {
                               onChange={(e) =>
                                 handleEditChange(goal._id, 'target_value', e.target.value)
                               }
-                              className={`h-7 w-full text-right text-xs font-mono ${
-                                errs.target_value ? 'border-red-400' : ''
-                              }`}
+                              className={cn(
+                                'input h-7 py-2 text-right text-xs font-mono',
+                                errs.target_value && 'input-error',
+                              )}
                             />
                           )}
                           {errs.target_value && (
@@ -544,7 +545,7 @@ export function ReviewPage() {
                     </td>
 
                     {/* Weightage — editable when SUBMITTED */}
-                    <td className="px-4 py-3">
+                    <td className="td">
                       {isSubmittedSheet ? (
                         <div className="flex flex-col items-end gap-0.5">
                           <div className="flex items-center gap-1">
@@ -557,9 +558,10 @@ export function ReviewPage() {
                               onChange={(e) =>
                                 handleEditChange(goal._id, 'weightage', e.target.value)
                               }
-                              className={`h-7 w-20 text-right text-xs font-semibold ${
-                                errs.weightage ? 'border-red-400' : ''
-                              }`}
+                              className={cn(
+                                'input h-7 w-20 py-2 text-right text-xs font-semibold tabular-nums',
+                                errs.weightage && 'input-error',
+                              )}
                             />
                             <span className="text-xs text-slate-400">%</span>
                           </div>
@@ -576,21 +578,17 @@ export function ReviewPage() {
 
                     {/* Save button per row */}
                     {isSubmittedSheet && (
-                      <td className="px-4 py-3 text-center">
+                      <td className="td">
                         {isSavingRow ? (
                           <Loader2 className="mx-auto h-4 w-4 animate-spin text-blue-400" />
                         ) : wasSaved && !isDirtyRow ? (
                           <span className="text-xs font-medium text-green-600">✓ Saved</span>
                         ) : (
                           <button
+                            type="button"
                             onClick={() => handleSaveRow(goal._id, goal)}
                             disabled={!isDirtyRow}
-                            className={[
-                              'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors',
-                              isDirtyRow
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                : 'text-slate-300 cursor-not-allowed',
-                            ].join(' ')}
+                            className="btn-primary btn-sm disabled:opacity-50"
                           >
                             <Save size={11} />
                             Save
@@ -604,15 +602,15 @@ export function ReviewPage() {
             </tbody>
             <tfoot className="bg-slate-50 text-xs font-semibold text-slate-700">
               <tr>
-                <td colSpan={isSubmittedSheet ? 6 : 5} className="px-4 py-3">
+                <td colSpan={isSubmittedSheet ? 6 : 5} className="td">
                   Total Weightage
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="td">
                   <span className={isBalanced ? 'text-green-700' : 'text-red-600'}>
                     {dbTotal.toFixed(2)} %
                   </span>
                 </td>
-                {isSubmittedSheet && <td />}
+                {isSubmittedSheet && <td className="td" />}
               </tr>
             </tfoot>
           </table>
@@ -621,7 +619,7 @@ export function ReviewPage() {
 
       {/* ── Audit log (collapsed preview) ── */}
       {sheet.audit_log && sheet.audit_log.length > 0 && (
-        <details className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <details className="card overflow-hidden p-0">
           <summary className="cursor-pointer px-5 py-4 font-semibold text-slate-700 text-sm select-none hover:bg-slate-50">
             Audit History ({sheet.audit_log.length} entries)
           </summary>
@@ -629,7 +627,13 @@ export function ReviewPage() {
             {[...sheet.audit_log].reverse().map((entry, idx) => (
               <div key={idx} className="flex items-start justify-between py-3 gap-4">
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={entry.action} />
+                  {entry.action === 'UNLOCKED' ? (
+                    <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                      Unlocked
+                    </span>
+                  ) : (
+                    <StatusBadge status={entry.action} />
+                  )}
                   <span className="text-xs text-slate-500 capitalize">{entry.actor_role}</span>
                 </div>
                 <div className="text-right text-xs text-slate-400">
@@ -651,11 +655,11 @@ export function ReviewPage() {
 
       {/* ── Action bar ── */}
       {canApproveOrReturn && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-4 shadow-sm">
+        <div className="card flex flex-wrap items-center gap-3 shadow-sm">
           <Button
             onClick={handleApprove}
             disabled={isApproving || !isBalanced || Object.values(dirty).some(Boolean)}
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="btn-primary gap-2"
           >
             {isApproving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -669,7 +673,7 @@ export function ReviewPage() {
             variant="outline"
             onClick={handleShowReturn}
             disabled={isApproving || isReturning}
-            className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"
+            className="btn-outline gap-2"
           >
             <RotateCcw className="h-4 w-4" />
             Return for Rework
@@ -713,11 +717,10 @@ export function ReviewPage() {
             }}
             placeholder="Enter your feedback (required)…"
             rows={4}
-            className={[
-              'resize-none border',
-              returnCommentError ? 'border-red-400' : 'border-amber-300',
-              'focus:border-amber-500 focus:ring-amber-200',
-            ].join(' ')}
+            className={cn(
+              'input resize-none',
+              returnCommentError && 'input-error',
+            )}
           />
           {returnCommentError && (
             <p className="text-xs text-red-600 font-medium">{returnCommentError}</p>
@@ -730,7 +733,7 @@ export function ReviewPage() {
             <Button
               onClick={handleReturn}
               disabled={isReturning}
-              className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+              className="btn-danger gap-2"
             >
               {isReturning ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -746,6 +749,7 @@ export function ReviewPage() {
                 setReturnComment('')
                 setReturnCommentError(null)
               }}
+              className="btn-outline"
             >
               Cancel
             </Button>
@@ -772,7 +776,7 @@ function SummaryTile({
   ok: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-sm">
       <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{label}</p>
       <p className="mt-1 text-lg font-bold text-slate-900 truncate">{value}</p>
       <p className={`mt-0.5 text-xs ${ok ? 'text-green-600' : 'text-slate-400'}`}>{sub}</p>

@@ -97,7 +97,6 @@ export function RoleSwitcher() {
   return (
     <div className="flex items-center gap-2">
       <span className="hidden lg:inline text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Dev · Impersonate
       </span>
       <Select
         value={currentValue}

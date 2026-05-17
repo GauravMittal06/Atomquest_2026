@@ -65,7 +65,8 @@ export function AdminReportsPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  function handlePushSuccess(_res: SharedKpiPushResponse) {
+  function handlePushSuccess(res: SharedKpiPushResponse) {
+    void res
     api.get<SharedKpi[]>('/shared-kpis/').then((r) => setSharedKpis(r.data)).catch(() => {})
   }
 
@@ -145,7 +146,8 @@ export function AdminReportsPage() {
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Reports & Analytics</h1>
+        <p className="breadcrumb">Admin · Reports</p>
+        <h1 className="page-title">Reports & Analytics</h1>
         <p className="text-xs text-slate-400 mt-0.5">
           Export, department analysis, and shared KPI management
         </p>
@@ -154,7 +156,7 @@ export function AdminReportsPage() {
       {/* ── Section 1: Export ── */}
       <section>
         <SectionLabel icon={<Download size={13} />}>Planned vs Actual Achievement</SectionLabel>
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+        <div className="card">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <p className="text-sm font-semibold text-slate-800">Achievement Report CSV</p>
@@ -167,7 +169,7 @@ export function AdminReportsPage() {
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                className="btn-primary"
               >
                 {exporting
                   ? <Loader2 size={14} className="animate-spin" />
@@ -211,7 +213,7 @@ export function AdminReportsPage() {
       {/* ── Section 2: Department Summary ── */}
       <section>
         <SectionLabel icon={<Building2 size={13} />}>Department Summary</SectionLabel>
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="card overflow-hidden p-0">
           {deptStats.length === 0 ? (
             <p className="px-5 py-8 text-sm text-slate-400 italic text-center">
               No department data yet.
@@ -219,31 +221,31 @@ export function AdminReportsPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+                <thead className="bg-slate-50 uppercase tracking-wide border-b border-slate-100">
                   <tr>
-                    <th className="px-5 py-3 text-left">Department</th>
-                    <th className="px-5 py-3 text-right">Employees</th>
-                    <th className="px-5 py-3 text-right">Submitted</th>
-                    <th className="px-5 py-3 text-right">Locked</th>
-                    <th className="px-5 py-3 text-right">Avg Score</th>
+                    <th className="th">Department</th>
+                    <th className="th">Employees</th>
+                    <th className="th">Submitted</th>
+                    <th className="th">Locked</th>
+                    <th className="th">Avg Score</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {deptStats.map((row) => (
-                    <tr key={row.dept} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3 font-medium text-slate-900">{row.dept}</td>
-                      <td className="px-5 py-3 text-right text-slate-600">{row.employees}</td>
-                      <td className="px-5 py-3 text-right">
+                    <tr key={row.dept} className="tr">
+                      <td className="td">{row.dept}</td>
+                      <td className="td">{row.employees}</td>
+                      <td className="td">
                         <span className={row.submitted > 0 ? 'font-medium text-blue-600' : 'text-slate-300'}>
                           {row.submitted}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="td">
                         <span className={row.locked > 0 ? 'font-medium text-purple-600' : 'text-slate-300'}>
                           {row.locked}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-700">
+                      <td className="td">
                         {row.avgScore ?? '—'}
                       </td>
                     </tr>
@@ -268,18 +270,18 @@ export function AdminReportsPage() {
       {sharedKpis.length > 0 && (
         <section>
           <SectionLabel icon={<BarChart2 size={13} />}>Pushed KPI History</SectionLabel>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="card overflow-hidden p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+                <thead className="bg-slate-50 uppercase tracking-wide border-b border-slate-100">
                   <tr>
-                    <th className="px-5 py-3 text-left">Description</th>
-                    <th className="px-5 py-3 text-left">Thrust Area</th>
-                    <th className="px-5 py-3 text-left">Period</th>
-                    <th className="px-5 py-3 text-right">Recipients</th>
-                    <th className="px-5 py-3 text-right">✓ OK</th>
-                    <th className="px-5 py-3 text-right">⏭ Skipped</th>
-                    <th className="px-5 py-3 text-left">Primary Owner</th>
+                    <th className="th">Description</th>
+                    <th className="th">Thrust Area</th>
+                    <th className="th">Period</th>
+                    <th className="th">Recipients</th>
+                    <th className="th">✓ OK</th>
+                    <th className="th">⏭ Skipped</th>
+                    <th className="th">Primary Owner</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -288,27 +290,27 @@ export function AdminReportsPage() {
                     const successCount = kpi.push_results.filter((r) => r.status === 'SUCCESS').length
                     const skipCount = kpi.push_results.filter((r) => r.status === 'SKIPPED').length
                     return (
-                      <tr key={kpi._id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3 max-w-xs">
+                      <tr key={kpi._id} className="tr">
+                        <td className="td">
                           <p className="font-medium text-slate-800 line-clamp-1">{kpi.description}</p>
                           <p className="text-xs text-slate-400 mt-0.5">
                             {kpi.uom_type} · {kpi.unit_of_measure} · Target: {String(kpi.target_value)}
                           </p>
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                        <td className="td">
                           {THRUST_AREA_LABELS[kpi.thrust_area]}
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-500">{kpi.period_label}</td>
-                        <td className="px-5 py-3 text-right text-slate-700">{kpi.recipient_ids.length}</td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="td">{kpi.period_label}</td>
+                        <td className="td">{kpi.recipient_ids.length}</td>
+                        <td className="td">
                           <span className="font-semibold text-green-600">{successCount}</span>
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="td">
                           <span className={skipCount > 0 ? 'font-semibold text-amber-600' : 'text-slate-300'}>
                             {skipCount}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-slate-600 text-xs">
+                        <td className="td">
                           {primaryEmp?.name ?? kpi.primary_owner_id}
                         </td>
                       </tr>

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
   Dialog,
@@ -194,7 +195,8 @@ export function AdminGoalSheetsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">All Goal Sheets</h1>
+          <p className="breadcrumb">Admin · Goal Sheets</p>
+          <h1 className="page-title">All Goal Sheets</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Governance · Unlock workflows · Audit trail
           </p>
@@ -246,7 +248,7 @@ export function AdminGoalSheetsPage() {
           </div>
 
           {/* ── Sheets table ── */}
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="card overflow-hidden p-0">
             {filteredSheets.length === 0 ? (
               <p className="px-5 py-10 text-sm text-slate-400 italic text-center">
                 No sheets matching this filter.
@@ -254,15 +256,15 @@ export function AdminGoalSheetsPage() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+                  <thead className="bg-slate-50 uppercase tracking-wide border-b border-slate-100">
                     <tr>
-                      <th className="px-5 py-3 text-left">Employee</th>
-                      <th className="px-5 py-3 text-left">Department</th>
-                      <th className="px-5 py-3 text-left">Period</th>
-                      <th className="px-5 py-3 text-left">Status</th>
-                      <th className="px-5 py-3 text-right">Goals</th>
-                      <th className="px-5 py-3 text-right">Score</th>
-                      <th className="px-5 py-3 text-right">Action</th>
+                      <th className="th">Employee</th>
+                      <th className="th">Department</th>
+                      <th className="th">Period</th>
+                      <th className="th">Status</th>
+                      <th className="th">Goals</th>
+                      <th className="th">Score</th>
+                      <th className="th">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -270,14 +272,14 @@ export function AdminGoalSheetsPage() {
                       const emp = userMap.get(sheet.employee_id)
                       const isAdminUnlocked = hasUnlock(sheet)
                       return (
-                        <tr key={sheet._id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-5 py-3">
+                        <tr key={sheet._id} className="tr">
+                          <td className="td">
                             <p className="font-medium text-slate-900">{emp?.name ?? sheet.employee_id}</p>
                             <p className="text-xs text-slate-400">{emp?.employee_id ?? ''}</p>
                           </td>
-                          <td className="px-5 py-3 text-slate-500 text-xs">{emp?.department}</td>
-                          <td className="px-5 py-3 text-slate-500 text-xs">{sheet.period_label}</td>
-                          <td className="px-5 py-3">
+                          <td className="td">{emp?.department}</td>
+                          <td className="td">{sheet.period_label}</td>
+                          <td className="td">
                             <div className="flex flex-col gap-1">
                               <StatusBadge status={sheet.status as GoalSheetStatus} />
                               {isAdminUnlocked && (
@@ -287,15 +289,15 @@ export function AdminGoalSheetsPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-5 py-3 text-right text-slate-700">{sheet.goal_count}</td>
-                          <td className="px-5 py-3 text-right font-semibold text-slate-700">
+                          <td className="td">{sheet.goal_count}</td>
+                          <td className="td">
                             {sheet.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
                           </td>
-                          <td className="px-5 py-3 text-right">
+                          <td className="td">
                             {sheet.status === 'LOCKED' ? (
                               <button
                                 onClick={() => openUnlockDialog(sheet)}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-purple-300 bg-purple-50 px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 transition-colors"
+                                className="btn-primary btn-sm"
                               >
                                 <Unlock size={11} />
                                 Unlock
@@ -316,7 +318,7 @@ export function AdminGoalSheetsPage() {
       )}
 
       {tab === 'history' && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="card overflow-hidden p-0">
           <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <History size={15} className="text-indigo-500" />
@@ -431,7 +433,10 @@ export function AdminGoalSheetsPage() {
               value={unlockReason}
               onChange={(e) => setUnlockReason(e.target.value)}
               placeholder="e.g. Correction required in Q2 targets — employee needs to revise weightage distribution."
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+              className={cn(
+                'input resize-none',
+                unlockError && 'input-error',
+              )}
             />
             <p className="text-xs text-slate-400">
               Visible to employee, their manager, and recorded permanently in the audit trail.
@@ -446,14 +451,14 @@ export function AdminGoalSheetsPage() {
             <button
               onClick={closeUnlockDialog}
               disabled={unlockLoading}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+              className="btn-outline"
             >
               Cancel
             </button>
             <button
               onClick={handleConfirmUnlock}
               disabled={unlockLoading || !unlockReason.trim()}
-              className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-60 transition-colors"
+              className="btn-primary"
             >
               {unlockLoading ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
               {unlockLoading ? 'Unlocking…' : 'Confirm Unlock'}

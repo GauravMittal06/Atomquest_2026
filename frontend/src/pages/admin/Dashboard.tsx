@@ -35,7 +35,7 @@ import {
 
 import api from '@/lib/api'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { AuditLogEntry, GoalSheet, GoalSheetStatus, User } from '@/types'
+import type { GoalSheet, GoalSheetStatus, User } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -213,7 +213,7 @@ export function AdminDashboard() {
   const lockedCount = statusCounts.LOCKED
 
   // "Requires Attention" items — only show non-zero ones
-  const attentionItems: AttentionItem[] = [
+  const attentionCandidates: AttentionItem[] = [
     {
       key: 'no-sheet',
       label: 'Employees not started',
@@ -246,7 +246,8 @@ export function AdminDashboard() {
       href: '/admin/goalsheets',
       description: 'Employee must address manager feedback',
     },
-  ].filter((item) => item.count > 0)
+  ]
+  const attentionItems = attentionCandidates.filter((item) => item.count > 0)
 
   const activityFeed = buildActivityFeed(allSheets, userMap)
 
@@ -264,7 +265,8 @@ export function AdminDashboard() {
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Operations</h1>
+          <p className="breadcrumb">Admin · Operations</p>
+          <h1 className="page-title">Operations</h1>
           <p className="text-xs text-slate-400 mt-0.5">FY 2025-26 · All departments</p>
         </div>
         <button
@@ -313,7 +315,7 @@ export function AdminDashboard() {
         {attentionItems.length > 0 && (
           <div className="lg:col-span-3">
             <SectionLabel>Requires Attention</SectionLabel>
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="card overflow-hidden p-0">
               <ul className="divide-y divide-slate-100">
                 {attentionItems.map((item) => (
                   <AttentionRow
@@ -343,15 +345,16 @@ export function AdminDashboard() {
         {/* Recent Activity — 2 cols (expands to full width when attention section is hidden) */}
         <div className={attentionItems.length > 0 ? 'lg:col-span-2' : ''}>
           <SectionLabel>Recent Activity</SectionLabel>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="card overflow-hidden p-0">
             {activityFeed.length === 0 ? (
               <p className="px-4 py-8 text-xs text-slate-400 italic text-center">
                 No recent activity yet.
               </p>
             ) : (
-              <ul className="divide-y divide-slate-50">
+              <div className="max-h-80 overflow-y-auto">
+                <ul className="divide-y divide-slate-50">
                 {activityFeed.map((event) => (
-                  <li key={event.id} className="flex items-start gap-3 px-4 py-3">
+                  <li key={event.id} className="flex items-start gap-2 px-4 py-2">
                     <span className={`mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full ${TONE_DOT[event.tone]}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-slate-700 leading-snug">{event.text}</p>
@@ -359,7 +362,8 @@ export function AdminDashboard() {
                     </div>
                   </li>
                 ))}
-              </ul>
+                </ul>
+              </div>
             )}
             <div className="border-t border-slate-100 px-4 py-2.5 bg-slate-50">
               <button
@@ -376,7 +380,7 @@ export function AdminDashboard() {
       {/* ── Status Strip ─────────────────────────────────────────────────── */}
       <div>
         <SectionLabel>Goal Sheet Status</SectionLabel>
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="card overflow-hidden p-0">
           <div className="flex items-stretch divide-x divide-slate-100">
             {STATUS_ORDER.map((st) => {
               const count = statusCounts[st]
@@ -459,7 +463,7 @@ function KpiTile({ label, value, sub, icon, highlight }: KpiTileProps) {
     : 'text-slate-900'
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+    <div className="card-sm">
       <div className="flex items-center justify-between gap-2 mb-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           {label}

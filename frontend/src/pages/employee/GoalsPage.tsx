@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { useCycleStatus } from '@/lib/useCycleStatus'
 import { isCheckInWindowOpen, THRUST_AREA_LABELS, type Goal, type GoalSheet } from '@/types'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -44,12 +45,6 @@ import { CreateGoalSheetForm } from '@/components/goals/CreateGoalSheetForm'
 // Helpers
 // ---------------------------------------------------------------------------
 
-function weightageColour(_w: number, total: number) {
-  if (total === 100) return 'text-green-600'
-  return 'text-slate-700'
-}
-
-// ---------------------------------------------------------------------------
 // GoalsPage
 // ---------------------------------------------------------------------------
 
@@ -192,7 +187,8 @@ export function GoalsPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <p className="breadcrumb">Employee · Goals</p>
+          <h1 className="page-title">
             {isEditing ? 'Edit Goal Sheet' : 'Create Goal Sheet'}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -221,7 +217,8 @@ export function GoalsPage() {
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">My Goal Sheet</h1>
+          <p className="breadcrumb">Employee · Goals</p>
+          <h1 className="page-title">My Goal Sheet</h1>
           <p className="mt-1 text-sm text-slate-500">
             {sheet.period_label} · {sheet.goal_count} goal{sheet.goal_count !== 1 ? 's' : ''} ·{' '}
             {sheet.total_weightage} % allocated
@@ -291,7 +288,7 @@ export function GoalsPage() {
       </div>
 
       {/* Goals table */}
-      <Card className="overflow-hidden">
+      <Card className={cn('card overflow-hidden p-0')}>
         <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardList className="h-4 w-4 text-slate-400" />
@@ -301,6 +298,7 @@ export function GoalsPage() {
             <Button
               variant="outline"
               size="sm"
+              className="btn-outline btn-sm"
               onClick={() => setPhase('create')}
             >
               <PlusCircle className="mr-1.5 h-4 w-4" />
@@ -311,17 +309,17 @@ export function GoalsPage() {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+              <thead className="bg-slate-50 uppercase tracking-wide">
                 <tr>
-                  <th className="px-5 py-3 text-left">#</th>
-                  <th className="px-5 py-3 text-left">Thrust Area</th>
-                  <th className="px-5 py-3 text-left">Description</th>
-                  <th className="px-5 py-3 text-left">Type</th>
-                  <th className="px-5 py-3 text-left">UoM</th>
-                  <th className="px-5 py-3 text-right">Target</th>
-                  <th className="px-5 py-3 text-right">Wt. %</th>
+                  <th className="th">#</th>
+                  <th className="th">Thrust Area</th>
+                  <th className="th">Description</th>
+                  <th className="th">Type</th>
+                  <th className="th">UoM</th>
+                  <th className="th">Target</th>
+                  <th className="th">Wt. %</th>
                   {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') ? (
-                    <th className="px-5 py-3 text-right">Achievement</th>
+                    <th className="th">Achievement</th>
                   ) : null}
                 </tr>
               </thead>
@@ -337,18 +335,12 @@ export function GoalsPage() {
                   const weightageErr = sharedWeightageErrors[goal._id]
 
                   return (
-                    <tr
-                      key={goal._id}
-                      className={[
-                        'transition-colors',
-                        isShared ? 'bg-indigo-50/30 hover:bg-indigo-50/60' : 'hover:bg-slate-50',
-                      ].join(' ')}
-                    >
-                      <td className="px-5 py-3 text-slate-400 text-xs">{i + 1}</td>
-                      <td className="px-5 py-3 whitespace-nowrap text-slate-600 text-xs">
+                    <tr key={goal._id} className="tr">
+                      <td className="td">{i + 1}</td>
+                      <td className="td">
                         {THRUST_AREA_LABELS[goal.thrust_area]}
                       </td>
-                      <td className="px-5 py-3 text-slate-800 max-w-xs">
+                      <td className="td">
                         <div className="flex items-start gap-1.5">
                           <span className="line-clamp-2">{goal.description}</span>
                           {isShared && (
@@ -364,7 +356,7 @@ export function GoalsPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="td">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                             goal.uom_type === 'Numeric'
@@ -377,8 +369,8 @@ export function GoalsPage() {
                           {goal.uom_type}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-slate-500">{goal.unit_of_measure}</td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="td">{goal.unit_of_measure}</td>
+                      <td className="td">
                         {/* Target is ALWAYS read-only for shared goals (SHARED_GOALS.md) */}
                         {isShared ? (
                           <div className="flex items-center justify-end gap-1">
@@ -399,7 +391,7 @@ export function GoalsPage() {
                       </td>
 
                       {/* Weightage — editable inline for shared goals when DRAFT/RETURNED */}
-                      <td className={`px-5 py-3 text-right font-semibold ${weightageColour(goal.weightage, sheet.total_weightage)}`}>
+                      <td className="td">
                         {canEditWeightage ? (
                           <div className="flex flex-col items-end gap-0.5">
                             <div className="flex items-center gap-1">
@@ -412,9 +404,10 @@ export function GoalsPage() {
                                 onChange={(e) =>
                                   handleSharedWeightageChange(goal._id, e.target.value)
                                 }
-                                className={`h-7 w-20 text-right text-xs ${
-                                  weightageErr ? 'border-red-400' : ''
-                                }`}
+                                className={cn(
+                                  'input h-7 w-20 text-xs text-right tabular-nums',
+                                  weightageErr && 'input-error',
+                                )}
                               />
                               <span className="text-xs text-slate-400">%</span>
                               {isSavingThis ? (
@@ -424,7 +417,7 @@ export function GoalsPage() {
                               ) : (
                                 <button
                                   onClick={() => handleSaveSharedWeightage(goal)}
-                                  className="rounded bg-blue-600 p-0.5 text-white hover:bg-blue-700"
+                                  className="btn-primary btn-sm p-1.5 min-w-0"
                                   title="Save weightage"
                                 >
                                   <Save size={11} />
@@ -441,7 +434,7 @@ export function GoalsPage() {
                       </td>
 
                       {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') && (
-                        <td className="px-5 py-3 text-right">
+                        <td className="td">
                           {goal.achievement_pct != null ? (
                             <div>
                               <span
@@ -470,10 +463,10 @@ export function GoalsPage() {
               </tbody>
               <tfoot className="bg-slate-50 text-xs font-semibold text-slate-700">
                 <tr>
-                  <td colSpan={6} className="px-5 py-3">
+                  <td colSpan={6} className="td">
                     Total
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="td">
                     <span
                       className={
                         sheet.total_weightage === 100 ? 'text-green-700' : 'text-red-600'
@@ -483,7 +476,7 @@ export function GoalsPage() {
                     </span>
                   </td>
                   {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') && (
-                    <td className="px-5 py-3 text-right">{sheet.overall_score?.toFixed(1) ?? '—'}</td>
+                    <td className="td">{sheet.overall_score?.toFixed(1) ?? '—'}</td>
                   )}
                 </tr>
               </tfoot>
@@ -499,7 +492,7 @@ export function GoalsPage() {
             variant="primary"
             onClick={handleSubmitForApproval}
             disabled={isSubmitting || sheet.total_weightage !== 100 || sheet.goal_count < 3}
-            className="gap-2"
+            className="btn-primary"
           >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -510,7 +503,7 @@ export function GoalsPage() {
           </Button>
         )}
         {sheet.status === 'APPROVED' && (
-          <Button variant="success" className="gap-2" disabled>
+          <Button variant="success" className="btn-outline" disabled>
             <CheckCircle2 className="h-4 w-4" />
             Approved — Check-ins Enabled
           </Button>
@@ -521,7 +514,7 @@ export function GoalsPage() {
             size="sm"
             onClick={handleDeleteDraft}
             disabled={isDeleting}
-            className="gap-2"
+            className="btn-danger btn-sm"
           >
             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
             {isDeleting ? 'Deleting…' : 'Delete Draft'}
@@ -555,7 +548,7 @@ function SummaryTile({
   ok: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-sm">
       <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{label}</p>
       <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
       <p className={`mt-0.5 text-xs ${ok ? 'text-green-600' : 'text-slate-400'}`}>{sub}</p>

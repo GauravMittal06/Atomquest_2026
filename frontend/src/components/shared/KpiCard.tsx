@@ -19,19 +19,13 @@ const ACCENT_STYLES: Record<NonNullable<KpiCardProps['accent']>, string> = {
 
 export function KpiCard({ label, value, sub, icon, accent = 'slate', className }: KpiCardProps) {
   return (
-    <div
-      className={cn(
-        'rounded-xl border p-5 flex flex-col gap-1 shadow-sm',
-        ACCENT_STYLES[accent],
-        className,
-      )}
-    >
+    <div className={cn('metric-card', ACCENT_STYLES[accent], className)}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider opacity-70">{label}</span>
+        <span className="metric-label">{label}</span>
         {icon && <span className="opacity-60">{icon}</span>}
       </div>
-      <p className="text-3xl font-bold mt-1">{value}</p>
-      {sub && <p className="text-xs opacity-70 mt-0.5">{sub}</p>}
+      <p className="metric-value">{value}</p>
+      {sub && <p className="metric-sub">{sub}</p>}
     </div>
   )
 }

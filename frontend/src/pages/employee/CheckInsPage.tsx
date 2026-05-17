@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { calculateProgress } from '@/lib/progressCalculator'
 import { useCycleStatus } from '@/lib/useCycleStatus'
 import { CycleStatusBanner } from '@/components/checkins/CycleStatusBanner'
@@ -285,7 +286,7 @@ export function CheckInsPage() {
             Once your manager approves your goal sheet, this is where you'll
             log quarterly check-ins.
           </p>
-          <Button variant="primary" onClick={() => navigate('/employee/goals')}>
+          <Button variant="primary" className="btn-primary" onClick={() => navigate('/employee/goals')}>
             Go to my Goal Sheet
           </Button>
         </div>
@@ -301,7 +302,8 @@ export function CheckInsPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Quarterly Check-Ins</h1>
+          <p className="breadcrumb">Employee · Check-ins</p>
+          <h1 className="page-title">Quarterly Check-Ins</h1>
           <p className="mt-1 text-sm text-slate-500">
             {sheet.period_label} · {sheet.goal_count} goal
             {sheet.goal_count !== 1 ? 's' : ''} ·{' '}
@@ -358,7 +360,7 @@ export function CheckInsPage() {
       </div>
 
       {/* Goals table */}
-      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+      <div className="card overflow-hidden p-0">
         <div className="flex items-center justify-between border-b bg-slate-50 px-5 py-3">
           <h2 className="text-sm font-semibold text-slate-800">
             Goals & Achievements ({selectedQuarter})
@@ -372,16 +374,16 @@ export function CheckInsPage() {
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 uppercase tracking-wide">
               <tr>
-                <th className="px-4 py-3 text-left">Goal</th>
-                <th className="px-4 py-3 text-center">UoM</th>
-                <th className="px-4 py-3 text-right">Target</th>
-                <th className="px-4 py-3 text-right">Wt %</th>
-                <th className="px-4 py-3 text-right">Actual ({selectedQuarter})</th>
-                <th className="px-4 py-3 text-right">Self ★</th>
-                <th className="px-4 py-3 text-right">Live Score</th>
-                {inputsEditable && <th className="px-4 py-3 text-center">Save</th>}
+                <th className="th">Goal</th>
+                <th className="th">UoM</th>
+                <th className="th">Target</th>
+                <th className="th">Wt %</th>
+                <th className="th">Actual ({selectedQuarter})</th>
+                <th className="th">Self ★</th>
+                <th className="th">Live Score</th>
+                {inputsEditable && <th className="th">Save</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -407,8 +409,8 @@ export function CheckInsPage() {
 
                 return (
                   <Fragment key={goal._id}>
-                    <tr className="align-top hover:bg-slate-50/60">
-                      <td className="px-4 py-3">
+                    <tr className="tr">
+                      <td className="td">
                         <p className="font-medium text-slate-800 line-clamp-2">
                           {goal.description}
                         </p>
@@ -416,17 +418,17 @@ export function CheckInsPage() {
                           {THRUST_AREA_LABELS[goal.thrust_area]}
                         </p>
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="td">
                         <UoMBadge uom={goal.uom_type} />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700">
+                      <td className="td">
                         {String(goal.target_value)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                      <td className="td">
                         {goal.weightage}
                       </td>
                       {/* Actual */}
-                      <td className="px-4 py-3">
+                      <td className="td">
                         <ActualInput
                           uom={goal.uom_type}
                           value={edit.actualValue}
@@ -435,19 +437,17 @@ export function CheckInsPage() {
                         />
                       </td>
                       {/* Self rating */}
-                      <td className="px-4 py-3">
+                      <td className="td">
                         <select
                           value={edit.selfRating}
                           disabled={!inputsEditable}
                           onChange={(e) =>
                             handleEditChange(goal._id, 'selfRating', e.target.value)
                           }
-                          className={[
-                            'h-7 w-16 rounded border bg-white px-1 text-xs',
-                            inputsEditable
-                              ? 'border-slate-200 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300'
-                              : 'border-slate-100 bg-slate-50 text-slate-500',
-                          ].join(' ')}
+                          className={cn(
+                            'input h-7 w-auto min-w-16 px-1 text-xs py-1',
+                            !inputsEditable && 'opacity-70',
+                          )}
                         >
                           <option value="">—</option>
                           {[0, 1, 2, 3, 4, 5].map((r) => (
@@ -458,7 +458,7 @@ export function CheckInsPage() {
                         </select>
                       </td>
                       {/* Live score */}
-                      <td className="px-4 py-3 text-right">
+                      <td className="td">
                         {livePreview.achievementPct === null ? (
                           <span className="text-slate-300">—</span>
                         ) : (
@@ -481,7 +481,7 @@ export function CheckInsPage() {
                         )}
                       </td>
                       {inputsEditable && (
-                        <td className="px-4 py-3 text-center">
+                        <td className="td">
                           {isSavingRow ? (
                             <Loader2 className="mx-auto h-4 w-4 animate-spin text-blue-400" />
                           ) : flag?.ok ? (
@@ -491,7 +491,8 @@ export function CheckInsPage() {
                           ) : (
                             <button
                               onClick={() => handleSaveRow(goal)}
-                              className="inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                              type="button"
+                              className="btn-primary btn-sm"
                             >
                               <Save size={11} />
                               Save
@@ -508,8 +509,8 @@ export function CheckInsPage() {
 
                     {/* Manager remark sub-row — read-only, mirrors the blue card in the manager review */}
                     {existingCheckin?.manager_remark && (
-                      <tr className="bg-blue-50/20">
-                        <td colSpan={colCount} className="px-5 pb-3 pt-0">
+                      <tr className="tr">
+                        <td colSpan={colCount} className="td">
                           <div className="rounded-md border border-blue-100 bg-blue-50/70 px-3 py-2">
                             <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-blue-600">
                               <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
@@ -536,7 +537,7 @@ export function CheckInsPage() {
           </p>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {goals.map((goal) => (
-              <div key={goal._id} className="rounded-md border border-slate-200 bg-white p-3">
+              <div key={goal._id} className="card-sm border-slate-200 p-3">
                 <p className="mb-1 text-xs font-medium text-slate-600 line-clamp-1">
                   {goal.description}
                 </p>
@@ -552,7 +553,7 @@ export function CheckInsPage() {
                       ? 'Add context for your manager (optional)…'
                       : 'Read-only outside the check-in window.'
                   }
-                  className="text-xs"
+                  className={cn('input min-h-[4.5rem] resize-none text-xs')}
                 />
               </div>
             ))}
@@ -565,7 +566,7 @@ export function CheckInsPage() {
         const quarterComments = comments.filter((c) => c.quarter === selectedQuarter)
         if (quarterComments.length === 0) return null
         return (
-          <div className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+          <div className="card overflow-hidden border-blue-100 p-0">
             <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50/60 px-5 py-3">
               <MessageSquare size={15} className="text-blue-500" />
               <h2 className="text-sm font-semibold text-blue-800">
@@ -640,10 +641,10 @@ function ActualInput({
   readOnly: boolean
   onChange: (v: string) => void
 }) {
-  const commonClass = [
-    'h-8 w-full text-right text-xs font-mono',
-    readOnly ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : '',
-  ].join(' ')
+  const inputBase = cn(
+    'input h-8 py-2 text-right text-xs font-mono',
+    readOnly && 'opacity-70 cursor-not-allowed',
+  )
 
   if (uom === 'Zero') {
     return (
@@ -651,12 +652,7 @@ function ActualInput({
         value={value}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        className={[
-          'h-8 w-full rounded border bg-white px-2 text-right text-xs',
-          readOnly
-            ? 'border-slate-100 bg-slate-50 text-slate-500'
-            : 'border-slate-200 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300',
-        ].join(' ')}
+        className={inputBase}
       >
         <option value="">—</option>
         <option value="Yes">Yes</option>
@@ -673,7 +669,7 @@ function ActualInput({
         readOnly={readOnly}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        className={commonClass}
+        className={inputBase}
       />
     )
   }
@@ -687,7 +683,7 @@ function ActualInput({
       disabled={readOnly}
       onChange={(e) => onChange(e.target.value)}
       placeholder="—"
-      className={commonClass}
+      className={inputBase}
     />
   )
 }

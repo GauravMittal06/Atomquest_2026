@@ -35,18 +35,12 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Administrator',
 }
 
-const ROLE_ACCENT: Record<UserRole, string> = {
-  EMPLOYEE: 'bg-blue-600',
-  MANAGER: 'bg-green-600',
-  ADMIN: 'bg-purple-600',
-}
-
 export function AppShell({ role, navItems }: AppShellProps) {
   const { user, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-50">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -58,16 +52,16 @@ export function AppShell({ role, navItems }: AppShellProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-white shadow-lg transition-transform duration-200 lg:static lg:translate-x-0',
+          'sidebar lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
         {/* Logo */}
-        <div className={cn('flex items-center gap-2.5 px-5 py-4 text-white', ROLE_ACCENT[role])}>
-          <Target size={22} />
-          <span className="text-lg font-bold tracking-tight">AtomQuest</span>
+        <div className="sidebar-logo-area">
+          <Target size={22} className="text-white" />
+          <span className="text-lg font-bold tracking-tight text-white">AtomQuest</span>
           <button
-            className="ml-auto lg:hidden"
+            className="ml-auto lg:hidden text-white"
             onClick={() => setSidebarOpen(false)}
           >
             <X size={18} />
@@ -75,44 +69,39 @@ export function AppShell({ role, navItems }: AppShellProps) {
         </div>
 
         {/* Role chip */}
-        <div className="px-4 py-2 border-b">
+        <div className="px-4 py-2 border-b border-white/10">
           <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
             {ROLE_LABELS[role]}
           </span>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
+        <nav className="sidebar-nav">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
-                )
+                isActive ? cn('sidebar-link sidebar-link-active') : 'sidebar-link'
               }
             >
-              <span className="text-slate-400">{item.icon}</span>
+              <span className="opacity-70">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
         {/* User footer */}
-        <div className="border-t p-4 space-y-3">
+        <div className="sidebar-footer">
           <div className="flex items-center gap-3">
-            <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white', ROLE_ACCENT[role])}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
               {user?.name?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-900 truncate">{user?.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.department}</p>
+              <p className="text-sm font-medium text-white truncate">{user?.name}</p>
+              <p className="text-xs text-slate-400 truncate">{user?.department}</p>
               {user?.reporting_to_name && (
-                <p className="text-xs text-slate-400 truncate mt-0.5">
+                <p className="text-xs text-slate-500 truncate mt-0.5">
                   Reports to:{' '}
                   <span className="font-medium text-slate-500">{user.reporting_to_name}</span>
                 </p>
@@ -121,7 +110,7 @@ export function AppShell({ role, navItems }: AppShellProps) {
           </div>
           <button
             onClick={logout}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-red-400 hover:bg-white/5 transition-colors"
           >
             <LogOut size={15} />
             Sign out
@@ -130,9 +119,9 @@ export function AppShell({ role, navItems }: AppShellProps) {
       </aside>
 
       {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden page-content lg:ml-64">
         {/* Topbar */}
-        <header className="flex h-14 items-center gap-3 border-b bg-white px-4 shadow-sm">
+        <header className="topbar">
           <button
             className="lg:hidden text-slate-500 hover:text-slate-700"
             onClick={() => setSidebarOpen(true)}
@@ -143,7 +132,7 @@ export function AppShell({ role, navItems }: AppShellProps) {
             <LayoutDashboard size={15} />
             Dashboard
           </span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-4">
             <MockDatePicker />
             <RoleSwitcher />
           </div>
@@ -154,7 +143,7 @@ export function AppShell({ role, navItems }: AppShellProps) {
             impersonation swap (RoleSwitcher) instantly remounts the page —
             mimicking `queryClient.invalidateQueries()` and forcing every
             dashboard's data fetch to re-run with the new JWT. */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="main-area">
           <Outlet key={user?._id ?? 'anonymous'} />
         </main>
       </div>

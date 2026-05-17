@@ -125,7 +125,8 @@ export function EmployeeDashboard() {
       {/* ── 1. Header: workflow status at a glance ─────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">
+          <p className="breadcrumb">Employee · Dashboard</p>
+          <h1 className="page-title">
             {user?.name?.split(' ')[0]}'s Goals
           </h1>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -170,12 +171,12 @@ export function EmployeeDashboard() {
             </div>
           )}
           {!sheet && (
-            <Button variant="primary" size="sm" onClick={() => navigate('/employee/goals')}>
+            <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
               Create Goal Sheet
             </Button>
           )}
           {sheet?.status === 'DRAFT' && (
-            <Button variant="primary" size="sm" onClick={() => navigate('/employee/goals')}>
+            <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
               Continue Editing →
             </Button>
           )}
@@ -302,7 +303,7 @@ export function EmployeeDashboard() {
 
       {/* ── 4. Goals table — main content ─────────────────────────────── */}
       {sheet && goals.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="card overflow-hidden p-0">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <h2 className="text-sm font-semibold text-slate-900">My Goals</h2>
             <div className="flex items-center gap-3">
@@ -319,19 +320,19 @@ export function EmployeeDashboard() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
-                  <th className="px-5 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="th">
                     Thrust Area
                   </th>
-                  <th className="px-5 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="th">
                     Description
                   </th>
-                  <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="th">
                     Wt.%
                   </th>
-                  <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="th">
                     Achievement
                   </th>
-                  <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="th">
                     Score
                   </th>
                 </tr>
@@ -340,17 +341,17 @@ export function EmployeeDashboard() {
                 {goals.map((goal) => {
                   const score = ((goal.achievement_pct ?? 0) / 100) * goal.weightage
                   return (
-                    <tr key={goal._id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                    <tr key={goal._id} className="tr">
+                      <td className="td">
                         {THRUST_AREA_LABELS[goal.thrust_area]}
                       </td>
-                      <td className="px-5 py-3 text-slate-800 max-w-xs">
+                      <td className="td">
                         <span className="line-clamp-2 text-sm">{goal.description}</span>
                       </td>
-                      <td className="px-5 py-3 text-right text-sm font-medium text-slate-700">
+                      <td className="td">
                         {goal.weightage}
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="td">
                         {goal.achievement_pct != null ? (
                           <span className={
                             goal.achievement_pct >= 80
@@ -365,7 +366,7 @@ export function EmployeeDashboard() {
                           <span className="text-xs text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right text-sm font-semibold text-slate-700">
+                      <td className="td">
                         {goal.achievement_pct != null ? score.toFixed(1) : '—'}
                       </td>
                     </tr>
@@ -374,14 +375,14 @@ export function EmployeeDashboard() {
               </tbody>
               <tfoot className="bg-slate-50 border-t border-slate-100">
                 <tr>
-                  <td colSpan={2} className="px-5 py-2.5 text-xs font-semibold text-slate-600">
+                  <td colSpan={2} className="td">
                     Total
                   </td>
-                  <td className="px-5 py-2.5 text-right text-sm font-bold text-slate-800">
+                  <td className="td">
                     {sheet.total_weightage}
                   </td>
-                  <td />
-                  <td className="px-5 py-2.5 text-right text-sm font-bold text-slate-800">
+                  <td className="td" />
+                  <td className="td">
                     {sheet.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
                   </td>
                 </tr>
@@ -393,13 +394,13 @@ export function EmployeeDashboard() {
 
       {/* Goals defined but no check-ins yet */}
       {sheet && goals.length === 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="card p-8 text-center">
           <ClipboardList size={28} className="mx-auto text-slate-300 mb-3" />
           <p className="text-sm font-semibold text-slate-600">No goals added yet</p>
           <p className="text-xs text-slate-400 mt-1 mb-4">
             Add at least 3 goals to your goal sheet before submitting.
           </p>
-          <Button size="sm" variant="primary" onClick={() => navigate('/employee/goals')}>
+          <Button size="sm" variant="primary" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
             Add Goals →
           </Button>
         </div>
@@ -407,13 +408,13 @@ export function EmployeeDashboard() {
 
       {/* ── 5. Empty state — no sheet ─────────────────────────────────── */}
       {!sheet && (
-        <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+        <div className="card p-12 text-center">
           <ClipboardList size={32} className="mx-auto text-slate-300 mb-3" />
           <p className="text-base font-semibold text-slate-700">No goal sheet yet</p>
           <p className="text-sm text-slate-400 mt-1 mb-5 max-w-xs mx-auto">
             Create your goal sheet for FY 2025-26 to get started.
           </p>
-          <Button variant="primary" size="sm" onClick={() => navigate('/employee/goals')}>
+          <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
             Create Goal Sheet
           </Button>
         </div>
@@ -438,7 +439,7 @@ function StatTile({
   warn?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className="card-sm">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
         {label}
       </p>

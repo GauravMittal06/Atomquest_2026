@@ -166,7 +166,8 @@ export function ManagerDashboard() {
       {/* ── 1. Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Team Overview</h1>
+          <p className="breadcrumb">Manager · Dashboard</p>
+          <h1 className="page-title">Team Overview</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             {user?.name} · FY 2025-26 · {teamSize} direct report{teamSize !== 1 ? 's' : ''}
           </p>
@@ -183,7 +184,7 @@ export function ManagerDashboard() {
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <span className="flex-1">{error}</span>
-          <button onClick={loadData} className="text-xs font-semibold underline hover:no-underline">
+          <button onClick={loadData} className="btn-primary btn-sm">
             Retry
           </button>
         </div>
@@ -224,7 +225,7 @@ export function ManagerDashboard() {
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
             Requires Attention
           </p>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="card overflow-hidden p-0">
             <ul className="divide-y divide-slate-100">
 
               {submitted.map(({ user: member, sheet }) => (
@@ -248,7 +249,7 @@ export function ManagerDashboard() {
                 </li>
               ))}
 
-              {adminReturned.map(({ user: member, sheet }) => (
+              {adminReturned.map(({ user: member }) => (
                 <li key={member._id} className="flex items-center gap-3 px-4 py-3.5">
                   <span className="h-2 w-2 flex-shrink-0 rounded-full bg-purple-400" />
                   <div className="flex-1 min-w-0">
@@ -261,7 +262,7 @@ export function ManagerDashboard() {
                 </li>
               ))}
 
-              {returned.map(({ user: member, sheet }) => (
+              {returned.map(({ user: member }) => (
                 <li key={member._id} className="flex items-center gap-3 px-4 py-3.5">
                   <span className="h-2 w-2 flex-shrink-0 rounded-full bg-amber-400" />
                   <div className="flex-1 min-w-0">
@@ -284,7 +285,7 @@ export function ManagerDashboard() {
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
           All Team Members
         </p>
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="card overflow-hidden p-0">
           {sortedRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <Users size={28} className="text-slate-300" />
@@ -298,25 +299,25 @@ export function ManagerDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-100">
                   <tr>
-                    <th className="px-5 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    <th className="th">
                       Employee
                     </th>
-                    <th className="px-5 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide hidden sm:table-cell">
+                    <th className="th">
                       Department
                     </th>
-                    <th className="px-5 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    <th className="th">
                       Status
                     </th>
-                    <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide hidden md:table-cell">
+                    <th className="th">
                       Goals
                     </th>
-                    <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide hidden md:table-cell">
+                    <th className="th">
                       Wt.%
                     </th>
-                    <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide hidden lg:table-cell">
+                    <th className="th">
                       Score
                     </th>
-                    <th className="px-5 py-2.5 text-right text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    <th className="th">
                       Action
                     </th>
                   </tr>
@@ -327,11 +328,8 @@ export function ManagerDashboard() {
                     const hasOverride = sheet && isAdminUnlocked(sheet)
 
                     return (
-                      <tr
-                        key={member._id}
-                        className={`transition-colors ${isUrgent ? 'bg-blue-50/30 hover:bg-blue-50/60' : 'hover:bg-slate-50/60'}`}
-                      >
-                        <td className="px-5 py-3">
+                      <tr key={member._id} className="tr">
+                        <td className="td">
                           <div className="flex items-center gap-2">
                             {isUrgent && (
                               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 flex-shrink-0" />
@@ -342,10 +340,10 @@ export function ManagerDashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-500 hidden sm:table-cell">
+                        <td className="td">
                           {member.department}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="td">
                           {sheet ? (
                             <div className="flex flex-col gap-0.5">
                               <StatusBadge status={sheet.status as GoalSheetStatus} />
@@ -359,24 +357,24 @@ export function ManagerDashboard() {
                             <span className="text-xs text-slate-400 italic">No sheet</span>
                           )}
                         </td>
-                        <td className="px-5 py-3 text-right text-xs text-slate-600 hidden md:table-cell">
+                        <td className="td">
                           {sheet ? sheet.goal_count : '—'}
                         </td>
-                        <td className="px-5 py-3 text-right hidden md:table-cell">
+                        <td className="td">
                           {sheet ? (
                             <span className={`text-xs font-medium ${sheet.total_weightage === 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
                               {sheet.total_weightage}%
                             </span>
                           ) : '—'}
                         </td>
-                        <td className="px-5 py-3 text-right text-sm font-semibold text-slate-700 hidden lg:table-cell">
+                        <td className="td">
                           {sheet?.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="td">
                           {sheet?.status === 'SUBMITTED' ? (
                             <button
                               onClick={() => navigate(`/manager/review/${sheet._id}`)}
-                              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                              className="btn-primary btn-sm"
                             >
                               Review <ArrowRight size={11} />
                             </button>
@@ -407,7 +405,7 @@ export function ManagerDashboard() {
       </div>
 
       {/* ── 5. Push Shared KPI — collapsible secondary action ─────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="card overflow-hidden p-0">
         <button
           onClick={() => setShowKpiForm((v) => !v)}
           className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
@@ -451,7 +449,7 @@ function StatTile({
   highlight?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className="card-sm">
       <div className="flex items-center justify-between gap-1 mb-1.5">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
         {icon}

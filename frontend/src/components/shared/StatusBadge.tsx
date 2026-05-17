@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
 import type { GoalSheetStatus } from '@/types'
-import { STATUS_BADGE_STYLES } from '@/types'
 
 interface StatusBadgeProps {
   status: GoalSheetStatus
@@ -15,15 +14,17 @@ const STATUS_LABELS: Record<GoalSheetStatus, string> = {
   LOCKED: 'Locked',
 }
 
+const STATUS_CLASS: Record<GoalSheetStatus, string> = {
+  DRAFT: 'badge-draft',
+  SUBMITTED: 'badge-submitted',
+  RETURNED: 'badge-returned',
+  APPROVED: 'badge-approved',
+  LOCKED: 'badge-locked',
+}
+
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        STATUS_BADGE_STYLES[status],
-        className,
-      )}
-    >
+    <span className={cn(STATUS_CLASS[status], className)}>
       {STATUS_LABELS[status]}
     </span>
   )

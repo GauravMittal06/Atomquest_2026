@@ -32,8 +32,9 @@ class ThrustArea(str, Enum):
 
 
 class UoMType(str, Enum):
-    QUANTITATIVE = "QUANTITATIVE"
-    QUALITATIVE = "QUALITATIVE"
+    NUMERIC = "Numeric"
+    TIMELINE = "Timeline"
+    ZERO = "Zero"
 
 
 class SelfRating(float, Enum):
@@ -81,28 +82,39 @@ class GoalBase(BaseModel):
     # Serialised as Any; validated by the cross-field validator below
     target_value: Any
 
-    # Weightage: 5 % – 50 % (VALIDATION_RULES.md §4)
-    weightage: Annotated[float, Field(ge=5.0, le=50.0)]
+    # Weightage: 10 % – 50 % (VALIDATION_RULES.md)
+    weightage: Annotated[float, Field(ge=10.0, le=50.0)]
 
     shared_goal_ref: SharedGoalRef = Field(default_factory=SharedGoalRef)
 
     @model_validator(mode="after")
     def validate_target_by_uom_type(self) -> "GoalBase":
-        if self.uom_type == UoMType.QUANTITATIVE:
+        if self.uom_type == UoMType.NUMERIC:
+            # Numeric: target must be a positive finite number
             try:
                 val = float(self.target_value)
             except (TypeError, ValueError):
-                raise ValueError("target_value must be a positive number for QUANTITATIVE goals")
+                raise ValueError("target_value must be a positive number for Numeric goals")
             if val <= 0:
-                raise ValueError("target_value must be > 0 for QUANTITATIVE goals")
+                raise ValueError("target_value must be > 0 for Numeric goals")
             self.target_value = round(val, 4)
-        else:
+
+        elif self.uom_type == UoMType.TIMELINE:
+            # Timeline: target must be a non-empty date or description string
             val = str(self.target_value).strip()
             if not val:
-                raise ValueError("target_value must be non-empty text for QUALITATIVE goals")
+                raise ValueError("target_value must be a non-empty date or description for Timeline goals")
             if len(val) > 500:
-                raise ValueError("target_value must not exceed 500 characters for QUALITATIVE goals")
+                raise ValueError("target_value must not exceed 500 characters for Timeline goals")
             self.target_value = val
+
+        else:
+            # Zero: binary outcome — value must be 'Yes' or 'No'
+            val = str(self.target_value).strip()
+            if val not in ("Yes", "No"):
+                raise ValueError("target_value must be 'Yes' or 'No' for Zero goals")
+            self.target_value = val
+
         return self
 
 
@@ -138,18 +150,21 @@ class GoalUpdate(BaseModel):
     uom_type: Optional[UoMType] = None
     unit_of_measure: Optional[str] = None
     target_value: Optional[Any] = None
-    weightage: Optional[Annotated[float, Field(ge=5.0, le=50.0)]] = None
+    weightage: Optional[Annotated[float, Field(ge=10.0, le=50.0)]] = None
 
     @model_validator(mode="after")
     def validate_target_if_uom_provided(self) -> "GoalUpdate":
         if self.uom_type and self.target_value is not None:
-            if self.uom_type == UoMType.QUANTITATIVE:
+            if self.uom_type == UoMType.NUMERIC:
                 try:
                     val = float(self.target_value)
                 except (TypeError, ValueError):
-                    raise ValueError("target_value must be numeric for QUANTITATIVE")
+                    raise ValueError("target_value must be numeric for Numeric goals")
                 if val <= 0:
-                    raise ValueError("target_value must be > 0 for QUANTITATIVE")
+                    raise ValueError("target_value must be > 0 for Numeric goals")
+            elif self.uom_type == UoMType.ZERO:
+                if str(self.target_value).strip() not in ("Yes", "No"):
+                    raise ValueError("target_value must be 'Yes' or 'No' for Zero goals")
         return self
 
 

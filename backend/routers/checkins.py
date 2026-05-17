@@ -188,7 +188,7 @@ async def _update_goal_achievement(goal_id: str, actual_value, goal: dict, db) -
     achievement_pct: float | None = None
     goal_score: float | None = None
 
-    if uom_type == UoMType.QUANTITATIVE:
+    if uom_type == UoMType.NUMERIC:
         try:
             actual = float(actual_value)
             target = float(target_value)

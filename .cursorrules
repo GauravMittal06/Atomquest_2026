@@ -1,0 +1,13 @@
+We are building the AtomQuest Goal Tracking Portal. Tech Stack: React (Vite, TS, Tailwind, shadcn/ui, Recharts) and FastAPI (Python, Motor for async MongoDB Atlas). Roles: Employee, Manager, Admin. Strict Rules: Use modern, enterprise SaaS aesthetics with colored status badges (Draft, Submitted, Returned, Approved, Locked). Always write modular code. Never mock data in production routes; always read/write to MongoDB. Enforce strict type checking.
+Always follow business logic defined in:
+- docs/BRD.md
+- docs/VALIDATION_RULES.md
+- docs/ROLE_PERMISSIONS.md
+- docs/WORKFLOWS.md
+- docs/CHECKIN_RULES.md
+- docs/SHARED_GOALS.md
+- docs/REPORTING_REQUIREMENTS.md
+
+Never violate BRD requirements.
+Always enforce validation rules on both frontend and backend.
+Always preserve workflow state consistency.

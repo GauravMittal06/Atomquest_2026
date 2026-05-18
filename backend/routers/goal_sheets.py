@@ -284,11 +284,28 @@ async def export_achievement_report(
         department = user.get("department", "")
         period_label = sheet.get("period_label", "")
         sheet_status = sheet.get("status", "")
-        # Compute live overall score with window-aware gating
-        from services.live_scoring import compute_live_sheet_score
+        # Use snapshot-aware resolution for overall score
+        from services.quarter_visibility import resolve_all_quarters_visibility
+        from services.quarter_snapshots import read_quarter_snapshot
+        
         try:
-            live_sheet_score = await compute_live_sheet_score(sid, db)
-            overall_score = live_sheet_score.overall_score
+            # Resolve quarter visibility to determine if we should use snapshot or live scoring
+            visibility_set = await resolve_all_quarters_visibility(db, sid)
+            
+            # For export, use the most recent visible quarter's score as overall score
+            overall_score = None
+            for quarter_vis in reversed(visibility_set.quarters):
+                if quarter_vis.is_visible:
+                    if quarter_vis.use_snapshot:
+                        snapshot = await read_quarter_snapshot(db, sid, quarter_vis.quarter_label)
+                        if snapshot:
+                            overall_score = snapshot.overall_score
+                            break
+                    elif quarter_vis.use_live_scoring:
+                        from services.live_scoring import compute_live_sheet_score
+                        live_sheet_score = await compute_live_sheet_score(sid, db)
+                        overall_score = live_sheet_score.overall_score
+                        break
         except Exception:
             overall_score = None
         overall_score_str = str(overall_score) if overall_score is not None else "n/a"
@@ -330,18 +347,36 @@ async def export_achievement_report(
             gid = str(goal["_id"])
             ci = checkins_by_goal.get(gid)
 
-            # Achievement columns - compute live with window-aware gating
+            # Achievement columns - compute with snapshot-aware resolution
             actual_val = ci["actual_value"] if ci else "n/a"
             
-            # Compute live scores using our live scoring service
-            from services.live_scoring import compute_live_goal_score
-            try:
-                live_score = await compute_live_goal_score(gid, db)
-                achievement_pct = live_score.achievement_pct
-                goal_score = live_score.goal_score
-            except Exception:
-                achievement_pct = None
-                goal_score = None
+            # Use snapshot-aware scoring: check if this goal's quarter is frozen
+            achievement_pct = None
+            goal_score = None
+            
+            if ci:
+                quarter_label = ci.get("period_label")
+                if quarter_label:
+                    # Check if this quarter has a snapshot
+                    try:
+                        snapshot = await read_quarter_snapshot(db, sid, quarter_label)
+                        if snapshot:
+                            # Use frozen snapshot values for this goal
+                            for frozen_goal in snapshot.goals:
+                                if frozen_goal.goal_id == gid:
+                                    achievement_pct = frozen_goal.achievement_pct
+                                    goal_score = frozen_goal.goal_score
+                                    actual_val = frozen_goal.actual_value if frozen_goal.actual_value is not None else "n/a"
+                                    break
+                        else:
+                            # No snapshot, use live scoring
+                            from services.live_scoring import compute_live_goal_score
+                            live_score = await compute_live_goal_score(gid, db, quarter_filter=quarter_label)
+                            achievement_pct = live_score.achievement_pct
+                            goal_score = live_score.goal_score
+                    except Exception:
+                        achievement_pct = None
+                        goal_score = None
 
             # Audit columns
             goal_created_date = _iso(goal.get("created_at"))

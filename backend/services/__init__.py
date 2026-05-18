@@ -16,6 +16,23 @@ from services.checkin_window import (
     set_mock_date_override,
     today_in_cycle,
 )
+from services.quarter_snapshots import (
+    QuarterSnapshotConflictError,
+    QuarterSnapshotNotFoundError,
+    freeze_snapshot_for_quarter,
+    quarter_snapshot_exists,
+    read_quarter_snapshot,
+    write_quarter_snapshot,
+)
+from services.quarter_visibility import (
+    QuarterState,
+    QuarterVisibility,
+    QuarterVisibilitySet,
+    get_visible_quarters_simple,
+    resolve_all_quarters_visibility,
+    resolve_quarter_state,
+    resolve_quarter_visibility,
+)
 
 __all__ = [
     "ProgressResult",
@@ -29,7 +46,20 @@ __all__ = [
     "QuarterId",
     "get_current_cycle_status",
     "get_mock_date_override",
+    "get_visible_quarters_simple",
     "is_input_window_open",
     "set_mock_date_override",
     "today_in_cycle",
+    "QuarterSnapshotConflictError",
+    "QuarterSnapshotNotFoundError",
+    "QuarterState",
+    "QuarterVisibility",
+    "QuarterVisibilitySet",
+    "freeze_snapshot_for_quarter",
+    "quarter_snapshot_exists",
+    "read_quarter_snapshot",
+    "resolve_all_quarters_visibility",
+    "resolve_quarter_state",
+    "resolve_quarter_visibility",
+    "write_quarter_snapshot",
 ]

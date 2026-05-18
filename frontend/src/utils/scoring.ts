@@ -258,3 +258,70 @@ export function formatScoreWithSuffix(score?: number | null, suffix: string = ''
 export function isValidScore(score?: number | null): boolean {
   return score != null && !isNaN(score);
 }
+
+// Snapshot-aware scoring utilities
+
+/**
+ * Resolve score for display with snapshot-aware priority.
+ * 
+ * Priority order:
+ * 1. Frozen snapshot score (mock-date independent)
+ * 2. Active live score (current quarter only)
+ * 3. null (hidden quarters)
+ * 
+ * @param snapshotScore Frozen snapshot score (highest priority)
+ * @param liveScore Computed live score (lower priority)
+ * @param isVisible Whether quarter should be visible at all
+ * @param useSnapshot Whether to prefer snapshot over live score
+ * @returns Resolved score or null for hidden quarters
+ */
+export function resolveScoreWithPriority(
+  snapshotScore: number | null,
+  liveScore: number | null,
+  isVisible: boolean,
+  useSnapshot: boolean
+): number | null {
+  // Hidden quarters always return null
+  if (!isVisible) {
+    return null
+  }
+
+  // Priority 1: Use snapshot score if available and preferred
+  if (useSnapshot && snapshotScore != null && !isNaN(snapshotScore)) {
+    return snapshotScore
+  }
+
+  // Priority 2: Use live score if available
+  if (liveScore != null && !isNaN(liveScore)) {
+    return liveScore
+  }
+
+  // Default: no valid score available
+  return null
+}
+
+/**
+ * Format score with snapshot-aware resolution and proper null handling.
+ * 
+ * @param snapshotScore Frozen snapshot score
+ * @param liveScore Live computed score
+ * @param isVisible Whether quarter is visible
+ * @param useSnapshot Whether to prefer snapshot
+ * @param decimals Number of decimal places
+ * @returns Formatted score string or "—" for null/hidden
+ */
+export function formatScoreWithPriority(
+  snapshotScore: number | null,
+  liveScore: number | null,
+  isVisible: boolean,
+  useSnapshot: boolean,
+  decimals: number = 1
+): string {
+  const resolvedScore = resolveScoreWithPriority(
+    snapshotScore,
+    liveScore,
+    isVisible,
+    useSnapshot
+  )
+  return formatScore(resolvedScore, decimals)
+}

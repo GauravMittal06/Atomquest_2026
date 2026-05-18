@@ -15,6 +15,8 @@ from typing import Annotated, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from models.quarter_snapshot import QuarterSnapshot
+
 
 # ---------------------------------------------------------------------------
 # Enums — in sync with WORKFLOWS.md state machine
@@ -93,6 +95,9 @@ class GoalSheetInDB(GoalSheetBase):
     audit_log: List[AuditLogEntry] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Optional immutable quarterly score snapshots (additive; see models.quarter_snapshot)
+    quarter_snapshots: Optional[List[QuarterSnapshot]] = None
 
     model_config = {"populate_by_name": True}
 

@@ -33,6 +33,7 @@ from models.goal_sheet import (
     GoalSheetStatusUpdate,
     GoalSheetPublic,
 )
+from models.quarter_snapshot import QuarterSnapshot, QuarterSnapshotGoalFrozen
 from models.check_in import (
     PeriodLabel,
     CheckInBase,
@@ -60,6 +61,8 @@ __all__ = [
     "GoalSheetStatus", "STATUS_BADGE_COLOUR", "ALLOWED_TRANSITIONS",
     "AuditLogEntry", "GoalSheetBase", "GoalSheetInDB", "GoalSheetCreate",
     "GoalSheetStatusUpdate", "GoalSheetPublic",
+    # quarter_snapshot
+    "QuarterSnapshot", "QuarterSnapshotGoalFrozen",
     # check_in
     "PeriodLabel", "CheckInBase", "CheckInInDB", "CheckInCreate",
     "CheckInUpdate", "ManagerRemarkUpdate", "CheckInPublic",

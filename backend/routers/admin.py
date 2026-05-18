@@ -53,8 +53,10 @@ def _serialize_goal(g: dict) -> dict[str, Any]:
         "thrust_area_label": THRUST_AREA_LABELS.get(g.get("thrust_area", ""), g.get("thrust_area", "")),
         "description": g.get("description", ""),
         "weightage": g.get("weightage"),
-        "achievement_pct": g.get("achievement_pct"),
-        "goal_score": g.get("goal_score"),
+        # Note: achievement_pct and goal_score excluded - use live scoring instead
+        # These persisted values can become stale and should not be relied upon
+        "achievement_pct": None,
+        "goal_score": None,
     }
 
 
@@ -93,6 +95,8 @@ async def get_all_goal_sheets_grouped(
 
     Optional filters apply at the goal-sheet level; employees with no matching
     sheets after filtering are omitted. Each employee appears exactly once.
+    
+    Uses snapshot-aware scoring: frozen quarters use snapshot values, active quarters use live.
     """
     db = get_database()
 
@@ -115,6 +119,37 @@ async def get_all_goal_sheets_grouped(
         goals_by_sheet[str(g.get("goal_sheet_id", ""))].append(g)
 
     _assign_revisions(sheets)
+    
+    # Compute snapshot-aware scores for all sheets with batched queries
+    from services.quarter_visibility import resolve_all_quarters_visibility
+    from services.quarter_snapshots import read_quarter_snapshot
+    from services.live_scoring import compute_live_sheet_scores_batch
+    
+    sheet_ids = [str(s["_id"]) for s in sheets]
+    scores_by_sheet: dict[str, float | None] = {}
+    
+    # Batch compute live scores for all sheets at once to avoid N+1 queries
+    live_scores_batch = await compute_live_sheet_scores_batch(sheet_ids, db)
+    
+    for sheet_id in sheet_ids:
+        try:
+            visibility_set = await resolve_all_quarters_visibility(db, sheet_id)
+            overall_score = None
+            for quarter_vis in reversed(visibility_set.quarters):
+                if quarter_vis.is_visible:
+                    if quarter_vis.use_snapshot:
+                        snapshot = await read_quarter_snapshot(db, sheet_id, quarter_vis.quarter_label)
+                        if snapshot:
+                            overall_score = snapshot.overall_score
+                            break
+                    elif quarter_vis.use_live_scoring:
+                        # Use pre-computed batch result instead of individual query
+                        if sheet_id in live_scores_batch:
+                            overall_score = live_scores_batch[sheet_id].overall_score
+                        break
+            scores_by_sheet[sheet_id] = overall_score
+        except Exception:
+            scores_by_sheet[sheet_id] = None
 
     # Serialize sheet payloads once
     sheet_payloads: list[dict[str, Any]] = []
@@ -139,7 +174,7 @@ async def get_all_goal_sheets_grouped(
             "revision": s.get("revision", 1),
             "status": sheet_status,
             "goals_count": s.get("goal_count", 0),
-            "score": s.get("overall_score"),
+            "score": scores_by_sheet.get(sid),
             "has_admin_unlock": any(
                 e.get("action") == "UNLOCKED" for e in (s.get("audit_log") or [])
             ),

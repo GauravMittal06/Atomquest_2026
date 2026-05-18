@@ -11,6 +11,11 @@ Key features:
 - Future quarter protection: never shows future quarter scores
 - Proper null handling when no check-ins exist
 - Maintains existing API contracts
+
+IMPORTANT: For complete quarter visibility resolution (including snapshot-based historical
+quarters), use services.quarter_visibility.resolve_all_quarters_visibility() instead of
+get_visible_quarters(). This module's get_visible_quarters() only considers window state
+and does NOT include frozen historical quarters.
 """
 
 from __future__ import annotations
@@ -52,33 +57,25 @@ class LiveSheetScore:
 
 def get_visible_quarters() -> List[str]:
     """
-    Get list of quarters that should show scores based on window status.
+    Get list of quarters that should show scores based on window status ONLY.
+    
+    WARNING: This function does NOT check snapshot existence. It only considers
+    window state. For complete visibility resolution including frozen historical
+    quarters, use services.quarter_visibility.resolve_all_quarters_visibility().
+    
+    This function is kept for backward compatibility with existing code that
+    doesn't have database/sheet_id context. New code should use the centralized
+    quarter_visibility resolver.
+    
     Scores are only visible for quarters whose review window has closed.
     Future quarters never show scores.
+    
+    Returns:
+        List of quarter labels visible based on window state only
+        (does NOT include quarters that are only visible due to snapshots)
     """
-    cycle_status = get_current_cycle_status()
-    current_quarter = cycle_status.active_quarter
-    
-    visible_quarters = []
-    
-    # If we're in goal setting, no quarterly scores should be visible yet
-    if current_quarter == QuarterId.GOAL_SETTING:
-        return []
-    
-    # If we're between windows, show all past quarters
-    if current_quarter is None:
-        # Assume we're past Q4, so show all quarters
-        return ["Q1", "Q2", "Q3", "Q4"]
-    
-    # If we're in an active quarter window, hide that quarter's scores
-    # Only show scores for quarters whose windows have closed
-    for quarter in QUARTER_ORDER:
-        if quarter == current_quarter:
-            # Active quarter - scores should be hidden during window
-            break
-        visible_quarters.append(quarter.value)
-    
-    return visible_quarters
+    from services.quarter_visibility import get_visible_quarters_simple
+    return get_visible_quarters_simple()
 
 
 def _live_goal_score_from_goal_and_checkins(
@@ -255,60 +252,111 @@ async def compute_quarterly_trend(
     checkins: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
     """
-    Compute quarterly trend data with window-aware visibility.
-    Only shows quarters whose review windows have closed.
+    Compute quarterly trend data with snapshot-aware visibility.
+    
+    CRITICAL BEHAVIOR (uses centralized quarter visibility resolver):
+    - FUTURE quarters: hidden (not included in output)
+    - ACTIVE quarters: use LIVE scoring
+    - FROZEN quarters: use SNAPSHOT values (ignore mock date)
+    - CLOSED quarters without snapshot: hidden
+    
+    This ensures mock-date rollback does NOT erase frozen historical quarters.
     """
     from app.utils.scoring import calculate_goal_score, calculate_achievement_percentage, UomType
+    from database import get_database
     
-    visible_quarters = get_visible_quarters()
-    goals_by_id = {str(g["_id"]): g for g in goals}
+    # Group goals by sheet_id for batch visibility resolution
+    goals_by_sheet = {}
+    for g in goals:
+        sheet_id = g.get("goal_sheet_id")
+        if sheet_id:
+            if sheet_id not in goals_by_sheet:
+                goals_by_sheet[sheet_id] = []
+            goals_by_sheet[sheet_id].append(g)
     
+    # Group check-ins by sheet_id
+    checkins_by_sheet = {}
+    for c in checkins:
+        sheet_id = c.get("goal_sheet_id")
+        if sheet_id:
+            if sheet_id not in checkins_by_sheet:
+                checkins_by_sheet[sheet_id] = []
+            checkins_by_sheet[sheet_id].append(c)
+    
+    db = get_database()
     trend_data = []
     
-    for quarter in ["Q1", "Q2", "Q3", "Q4"]:
-        if quarter not in visible_quarters:
-            # Don't include quarters that shouldn't be visible yet
-            continue
-            
-        planned_total = 0.0
-        actual_total = 0.0
-        checkin_count = 0
-        
-        # Get check-ins for this quarter
-        quarter_checkins = [c for c in checkins if c.get("period_label") == quarter]
-        
-        for checkin in quarter_checkins:
-            goal = goals_by_id.get(str(checkin.get("goal_id")))
-            if not goal:
-                continue
-                
-            weightage = float(goal.get("weightage", 0))
-            if weightage <= 0:
-                continue
-            
-            # Calculate achievement percentage
-            achievement_pct = calculate_achievement_percentage(
-                UomType(goal.get("uom_type", "Max")),
-                checkin.get("actual_value"),
-                goal.get("target_value")
-            )
-            
-            # Calculate goal score
-            goal_score = calculate_goal_score(achievement_pct, weightage)
-            
-            planned_total += weightage
-            actual_total += goal_score
-            checkin_count += 1
-        
-        trend_data.append({
-            "quarter": quarter,
-            "planned": round(planned_total, 1),
-            "actual": round(actual_total, 1), 
-            "checkin_count": checkin_count
-        })
+    # Aggregate scores across all sheets with snapshot-aware resolution
+    quarter_aggregates = {q: {"planned": 0.0, "actual": 0.0, "checkin_count": 0} for q in ["Q1", "Q2", "Q3", "Q4"]}
+    processed_quarters = set()
     
-    # Apply future quarter leakage protection
-    return ensure_no_future_quarter_leakage(trend_data)
+    for sheet_id, sheet_goals in goals_by_sheet.items():
+        # Resolve quarter visibility for this sheet (includes snapshot checking)
+        from services.quarter_visibility import resolve_all_quarters_visibility
+        from services.quarter_snapshots import read_quarter_snapshot
+        
+        visibility_set = await resolve_all_quarters_visibility(db, sheet_id)
+        goals_by_id = {str(g["_id"]): g for g in sheet_goals}
+        sheet_checkins = checkins_by_sheet.get(sheet_id, [])
+        
+        # Process each quarter using centralized visibility resolution
+        for quarter_visibility in visibility_set.quarters:
+            quarter = quarter_visibility.quarter_label
+            
+            # Skip quarters that are not visible
+            if not quarter_visibility.is_visible:
+                continue
+            
+            processed_quarters.add(quarter)
+            
+            # FROZEN quarters: use snapshot values (mock-date independent)
+            if quarter_visibility.use_snapshot:
+                snapshot = await read_quarter_snapshot(db, sheet_id, quarter)
+                if snapshot:
+                    quarter_aggregates[quarter]["actual"] += snapshot.overall_score
+                    quarter_aggregates[quarter]["planned"] += 100.0  # Snapshots are normalized to 100
+                    quarter_aggregates[quarter]["checkin_count"] += snapshot.source_check_in_count
+                continue
+            
+            # ACTIVE quarters: use live scoring
+            if quarter_visibility.use_live_scoring:
+                quarter_checkins = [c for c in sheet_checkins if c.get("period_label") == quarter]
+                
+                for checkin in quarter_checkins:
+                    goal = goals_by_id.get(str(checkin.get("goal_id")))
+                    if not goal:
+                        continue
+                        
+                    weightage = float(goal.get("weightage", 0))
+                    if weightage <= 0:
+                        continue
+                    
+                    # Calculate achievement percentage
+                    achievement_pct = calculate_achievement_percentage(
+                        UomType(goal.get("uom_type", "Max")),
+                        checkin.get("actual_value"),
+                        goal.get("target_value")
+                    )
+                    
+                    # Calculate goal score
+                    goal_score = calculate_goal_score(achievement_pct, weightage)
+                    
+                    quarter_aggregates[quarter]["planned"] += weightage
+                    quarter_aggregates[quarter]["actual"] += goal_score
+                    quarter_aggregates[quarter]["checkin_count"] += 1
+    
+    # Build final trend data for visible quarters only
+    for quarter in ["Q1", "Q2", "Q3", "Q4"]:
+        if quarter in processed_quarters:
+            agg = quarter_aggregates[quarter]
+            trend_data.append({
+                "quarter": quarter,
+                "planned": round(agg["planned"], 1),
+                "actual": round(agg["actual"], 1),
+                "checkin_count": agg["checkin_count"]
+            })
+    
+    return trend_data
 
 
 def should_hide_scores_for_quarter(quarter: str) -> bool:

@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, ClipboardList } from 'lucide-react'
 
 import api from '@/lib/api'
-import { buildQuarterlyScores } from '@/lib/quarterlyScoreTrend'
+import { buildQuarterlyScores, buildQuarterlyScoresWithSnapshots } from '@/lib/quarterlyScoreTrend'
 import { useCycleStatus } from '@/lib/useCycleStatus'
 import { formatScore } from '@/utils/scoring'
 import { GoalSheetStatusBanner } from '@/components/employee/GoalSheetStatusBanner'
@@ -28,6 +28,7 @@ export function EmployeeDashboard() {
   const [sheet, setSheet] = useState<GoalSheet | null>(null)
   const [goals, setGoals] = useState<Goal[]>([])
   const [checkins, setCheckins] = useState<CheckIn[]>([])
+  const [quarterlyScores, setQuarterlyScores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [chartError, setChartError] = useState<string | null>(null)
   const [sheetError, setSheetError] = useState<string | null>(null)
@@ -57,14 +58,30 @@ export function EmployeeDashboard() {
         ])
         setGoals(goalsRes.data)
         setCheckins(checkinsRes.data)
+        
+        // Build quarterly scores with snapshot-aware resolution
+        try {
+          const snapshotAwareScores = await buildQuarterlyScoresWithSnapshots(
+            goalsRes.data, 
+            checkinsRes.data, 
+            latest._id
+          )
+          setQuarterlyScores(snapshotAwareScores)
+        } catch {
+          // Fallback to legacy scoring if snapshot resolution fails
+          const legacyScores = buildQuarterlyScores(goalsRes.data, checkinsRes.data)
+          setQuarterlyScores(legacyScores)
+        }
       } catch {
         setChartError('Failed to load score trend data.')
         setGoals([])
         setCheckins([])
+        setQuarterlyScores([])
       }
     } catch {
       setSheetError('Failed to load dashboard data.')
       setSheet(null)
+      setQuarterlyScores([])
     } finally {
       setLoading(false)
     }
@@ -75,7 +92,6 @@ export function EmployeeDashboard() {
   }, [loadData, authVersion])
 
   const checkInWindowOpen = cycleStatus ? isCheckInWindowOpen(cycleStatus.state) : false
-  const quarterlyScores = buildQuarterlyScores(goals, checkins)
 
   if (loading || cycleLoading) {
     return (

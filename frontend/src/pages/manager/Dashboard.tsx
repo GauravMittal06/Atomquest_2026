@@ -33,7 +33,8 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
-import { formatScore } from '@/utils/scoring'
+import { formatScore, formatScoreWithPriority } from '@/utils/scoring'
+import { resolveAllQuartersVisibility, getQuarterSnapshot } from '@/services/quarterVisibility'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
 import { useAuth } from '@/contexts/AuthContext'
@@ -141,6 +142,7 @@ export function ManagerDashboard() {
   const hasAttentionItems =
     submitted.length > 0 || returned.length > 0 || adminReturned.length > 0
 
+  // Calculate average score from valid sheet scores (already snapshot-aware from backend)
   const scores = rows
     .filter((r) => r.sheet?.overall_score != null && !isNaN(r.sheet.overall_score))
     .map((r) => r.sheet!.overall_score as number)

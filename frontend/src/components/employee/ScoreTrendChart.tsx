@@ -55,7 +55,11 @@ export function ScoreTrendChart({ data, periodLabel }: ScoreTrendChartProps) {
                 axisLine={false}
               />
               <Tooltip
-                formatter={(value: number) => [`${formatScore(value)} pts`, 'Score']}
+                formatter={(value: number, name, props) => {
+                  const isSnapshot = props.payload?.isSnapshot
+                  const label = isSnapshot ? 'Score (Frozen)' : 'Score'
+                  return [`${formatScore(value)} pts`, label]
+                }}
                 contentStyle={{ fontSize: 12 }}
               />
               <Bar dataKey="score" fill={PRIMARY_FILL} radius={[6, 6, 0, 0]} maxBarSize={48} />

@@ -103,12 +103,37 @@ async def get_manager_approvals(
             reviewer_name_by_id[str(doc["_id"])] = doc["name"]
 
     sheet_ids_for_scores: list[str] = [s["_id"] for s in sheets]
-    live_by_sheet: dict[str, LiveSheetScore] = {}
+    scores_by_sheet: dict[str, float | None] = {}
     if sheet_ids_for_scores:
-        try:
-            live_by_sheet = await compute_live_sheet_scores_batch(sheet_ids_for_scores, db)
-        except Exception:
-            live_by_sheet = {}
+        # Use batched snapshot-aware scoring to avoid N+1 queries
+        from services.quarter_visibility import resolve_all_quarters_visibility
+        from services.quarter_snapshots import read_quarter_snapshot
+        
+        # Batch compute live scores for all sheets at once
+        live_scores_batch = await compute_live_sheet_scores_batch(sheet_ids_for_scores, db)
+        
+        for sheet_id in sheet_ids_for_scores:
+            try:
+                # Resolve quarter visibility to determine if we should use snapshot or live scoring
+                visibility_set = await resolve_all_quarters_visibility(db, sheet_id)
+                
+                # Use the most recent visible quarter's score as overall score
+                overall_score = None
+                for quarter_vis in reversed(visibility_set.quarters):
+                    if quarter_vis.is_visible:
+                        if quarter_vis.use_snapshot:
+                            snapshot = await read_quarter_snapshot(db, sheet_id, quarter_vis.quarter_label)
+                            if snapshot:
+                                overall_score = snapshot.overall_score
+                                break
+                        elif quarter_vis.use_live_scoring:
+                            # Use pre-computed batch result instead of individual query
+                            if sheet_id in live_scores_batch:
+                                overall_score = live_scores_batch[sheet_id].overall_score
+                            break
+                scores_by_sheet[sheet_id] = overall_score
+            except Exception:
+                scores_by_sheet[sheet_id] = None
     
     # Enhance with employee data and sort
     results = []
@@ -148,11 +173,7 @@ async def get_manager_approvals(
             "period_label": sheet.get("period_label", ""),
             "goal_count": sheet.get("goal_count", 0),
             "total_weightage": sheet.get("total_weightage", 0),
-            "overall_score": (
-                live_by_sheet[sheet["_id"]].overall_score
-                if sheet["_id"] in live_by_sheet
-                else None
-            ),
+            "overall_score": scores_by_sheet.get(sheet["_id"]),
             "action_date": action_date,
             "review_comment": sheet.get("review_comment"),
             "reviewer_name": reviewer_name,

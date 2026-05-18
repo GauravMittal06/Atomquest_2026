@@ -37,16 +37,9 @@ app = FastAPI(
     description="Enterprise goal-tracking API — Roles: Employee | Manager | Admin",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=True,
 )
 
-app = FastAPI(
-    title="AtomQuest Goal Tracking Portal",
-    description="Enterprise goal-tracking API — Roles: Employee | Manager | Admin",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# FIXED: Added wildcard/production support to prevent CORS lockout during your live demo
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "https://atomquest-2026-gilt.vercel.app"],

@@ -191,17 +191,10 @@ async def get_admin_users(
 async def get_completion_dashboard(
     _: TokenData = Depends(require_roles(UserRole.ADMIN)),
 ) -> dict[str, Any]:
-    """
-    Aggregate every metric the Admin Completion Dashboard needs in a single
-    Mongo round-trip per collection.  The frontend polls this endpoint every
-    ~15 s so every widget stays current as employees submit goal sheets and
-    managers add check-in comments.
-    """
     db = get_database()
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cycle = get_current_cycle_status()
     active_quarter = cycle.active_quarter.value if cycle.active_quarter else None
-    # Treat GOAL_SETTING as "no active quarterly check-in window".
     if active_quarter == "GOAL_SETTING":
         active_quarter = None
 
@@ -212,8 +205,13 @@ async def get_completion_dashboard(
     checkins: list[dict] = [c async for c in db[COLLECTION_CHECKINS].find({})]
     comments: list[dict] = [c async for c in db[COLLECTION_CHECKIN_COMMENTS].find({})]
 
+    # ADD THESE DEBUG LINES
+    print(f"DEBUG: users={len(users)}, sheets={len(sheets)}, goals={len(goals)}, checkins={len(checkins)}, comments={len(comments)}")
+
     employees = [u for u in users if u.get("role") == UserRole.EMPLOYEE.value]
     managers = [u for u in users if u.get("role") == UserRole.MANAGER.value]
+
+    print(f"DEBUG: employees={len(employees)}, managers={len(managers)}")
 
     return {
         "as_of": now_iso,
@@ -226,7 +224,6 @@ async def get_completion_dashboard(
         "thrust_area_distribution": _compute_thrust_area_distribution(goals),
         "quarterly_trend": await compute_quarterly_trend(goals, checkins),
     }
-
 
 # ---------------------------------------------------------------------------
 # Section: employee submission

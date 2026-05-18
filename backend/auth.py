@@ -45,8 +45,11 @@ def decode_token(token: str) -> TokenData:
         role_str: str = payload.get("role")
         if user_id is None or role_str is None:
             raise credentials_exception
-        return TokenData(user_id=user_id, role=UserRole(role_str))
-    except JWTError:
+            
+        normalized_role = str(role_str).strip().upper()
+        
+        return TokenData(user_id=user_id, role=UserRole(normalized_role))
+    except (JWTError, ValueError):
         raise credentials_exception
 
 

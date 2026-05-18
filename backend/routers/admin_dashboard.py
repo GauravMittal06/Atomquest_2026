@@ -43,6 +43,7 @@ from models.goal_sheet import GoalSheetStatus
 from models.user import TokenData, UserRole
 from services.checkin_window import get_current_cycle_status
 from services.live_scoring import compute_quarterly_trend
+from models import AdminDashboardMetrics
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
 

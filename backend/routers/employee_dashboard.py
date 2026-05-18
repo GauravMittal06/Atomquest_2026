@@ -23,6 +23,7 @@ from services.live_scoring import compute_live_sheet_score, ensure_no_future_qua
 from services.checkin_window import get_current_cycle_status
 from services.quarter_visibility import resolve_all_quarters_visibility
 from services.quarter_snapshots import read_quarter_snapshot
+from models import EmployeeDashboardMetrics
 
 router = APIRouter(prefix="/api/employee/dashboard", tags=["Employee Dashboard"])
 

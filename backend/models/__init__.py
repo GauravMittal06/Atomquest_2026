@@ -1,3 +1,27 @@
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
+class AdminDashboardMetrics(BaseModel):
+    as_of: str
+    active_quarter: Optional[str] = None
+    employee_submission: Dict[str, Any]
+    manager_checkins: Dict[str, Any]
+    checkin_summary: Dict[str, Any]
+    thrust_area_distribution: List[Dict[str, Any]]
+    quarterly_trend: List[Dict[str, Any]]
+
+    class Config:
+        from_attributes = True
+
+class EmployeeDashboardMetrics(BaseModel):
+    sheet: Optional[Dict[str, Any]] = None
+    quarterly_scores: List[Dict[str, Any]] = Field(default_factory=list)
+    window_status: Dict[str, Any]
+    visible_quarters: List[str] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
 from models.user import (
     UserRole,
     UserBase,
@@ -50,6 +74,8 @@ from models.checkin_comment import (
 )
 
 __all__ = [
+    # dashboard
+    "AdminDashboardMetrics", "EmployeeDashboardMetrics",
     # user
     "UserRole", "UserBase", "UserInDB", "UserCreate", "UserUpdate",
     "UserAdminUpdate", "UserPublic", "TokenData", "Token", "PyObjectId",

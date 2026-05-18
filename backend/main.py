@@ -55,22 +55,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# FIXED: Added the mandatory prefix matching what Vercel sends
-app.include_router(auth_router, prefix="/api")
-app.include_router(users_router, prefix="/api")
-app.include_router(goal_sheets_router, prefix="/api")
-app.include_router(goals_router, prefix="/api")
-app.include_router(checkins_router, prefix="/api")
-app.include_router(checkin_comments_router, prefix="/api")
-app.include_router(shared_kpis_router, prefix="/api")
-app.include_router(system_router, prefix="/api")
-app.include_router(admin_router, prefix="/api")
-app.include_router(admin_dashboard_router, prefix="/api")
-app.include_router(employee_dashboard_router, prefix="/api")
-app.include_router(manager_router, prefix="/api")
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(goal_sheets_router)
+app.include_router(goals_router)
+app.include_router(checkins_router)
+app.include_router(checkin_comments_router)
+app.include_router(shared_kpis_router)
+app.include_router(system_router)
+app.include_router(admin_router)
+app.include_router(admin_dashboard_router)
+app.include_router(employee_dashboard_router)
+app.include_router(manager_router)
 
 
-# FIXED: Added prefix so cron-job.org and Vercel hit it cleanly
 @app.get("/api/health", tags=["Health"])
 async def health():
     return {"status": "ok", "service": "AtomQuest API"}

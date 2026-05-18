@@ -4,5 +4,14 @@
         "source": "/api/:path*",
         "destination": "https://atomquest-2026-si4h.onrender.com/api/:path*"
       }
+    ],
+    "routes": [
+      {
+        "handle": "filesystem"
+      },
+      {
+        "src": "/(.*)",
+        "dest": "/index.html"
+      }
     ]
   }

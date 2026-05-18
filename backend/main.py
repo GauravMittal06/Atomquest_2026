@@ -39,28 +39,38 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app = FastAPI(
+    title="AtomQuest Goal Tracking Portal",
+    description="Enterprise goal-tracking API — Roles: Employee | Manager | Admin",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# FIXED: Added wildcard/production support to prevent CORS lockout during your live demo
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=["http://localhost:5173", "https://atomquest-2026-gilt.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(goal_sheets_router)
-app.include_router(goals_router)
-app.include_router(checkins_router)
-app.include_router(checkin_comments_router)
-app.include_router(shared_kpis_router)
-app.include_router(system_router)
-app.include_router(admin_router)
-app.include_router(admin_dashboard_router)
-app.include_router(employee_dashboard_router)
-app.include_router(manager_router)
+# FIXED: Added the mandatory prefix matching what Vercel sends
+app.include_router(auth_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(goal_sheets_router, prefix="/api")
+app.include_router(goals_router, prefix="/api")
+app.include_router(checkins_router, prefix="/api")
+app.include_router(checkin_comments_router, prefix="/api")
+app.include_router(shared_kpis_router, prefix="/api")
+app.include_router(system_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(admin_dashboard_router, prefix="/api")
+app.include_router(employee_dashboard_router, prefix="/api")
+app.include_router(manager_router, prefix="/api")
 
 
-@app.get("/health", tags=["Health"])
+# FIXED: Added prefix so cron-job.org and Vercel hit it cleanly
+@app.get("/api/health", tags=["Health"])
 async def health():
     return {"status": "ok", "service": "AtomQuest API"}

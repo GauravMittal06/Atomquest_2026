@@ -186,7 +186,7 @@ async def get_admin_users(
 # Endpoint: completion dashboard
 # ---------------------------------------------------------------------------
 
-@router.get("/completion")
+@router.get("", response_model=AdminDashboardMetrics)
 async def get_completion_dashboard(
     _: TokenData = Depends(require_roles(UserRole.ADMIN)),
 ) -> dict[str, Any]:

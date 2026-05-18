@@ -27,7 +27,7 @@ from services.quarter_snapshots import read_quarter_snapshot
 router = APIRouter(prefix="/api/employee/dashboard", tags=["Employee Dashboard"])
 
 
-@router.get("/summary")
+@router.get("", response_model=EmployeeDashboardMetrics)
 async def get_employee_dashboard_summary(
     current: TokenData = Depends(get_current_user),
 ) -> Dict[str, Any]:

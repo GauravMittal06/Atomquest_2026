@@ -116,7 +116,7 @@ async def _recalculate_sheet_totals(sheet_id: str, db) -> None:
 # ---------------------------------------------------------------------------
 # POST /api/goals/ — create Goal Sheet + Goals in one shot
 # ---------------------------------------------------------------------------
-
+@router.post("")
 @router.post("/", response_model=GoalSheetWithGoalsResponse, status_code=status.HTTP_201_CREATED)
 async def create_goal_sheet_with_goals(
     body: GoalSheetWithGoalsCreate,

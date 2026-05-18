@@ -39,6 +39,7 @@ from database import (
     get_database,
 )
 from models.goal import ThrustArea
+from models.goal_sheet import GoalSheetStatus
 from models.user import TokenData, UserRole
 from services.checkin_window import get_current_cycle_status
 from services.progress_calculator import calculate_progress
@@ -86,7 +87,103 @@ def _round1(value: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Endpoint
+# Endpoint: admin user management list
+# ---------------------------------------------------------------------------
+
+_STATUS_RANK = {
+    GoalSheetStatus.DRAFT: 0,
+    GoalSheetStatus.SUBMITTED: 1,
+    GoalSheetStatus.RETURNED: 2,
+    GoalSheetStatus.APPROVED: 3,
+    GoalSheetStatus.LOCKED: 4,
+}
+
+
+@router.get("/users")
+async def get_admin_users(
+    _: TokenData = Depends(require_roles(UserRole.ADMIN)),
+) -> list[dict[str, Any]]:
+    """
+    All users with manager name, latest goal-sheet status, and last check-in date.
+    Powers Admin → Users (read-only directory).
+    """
+    db = get_database()
+
+    users = [u async for u in db[COLLECTION_USERS].find({}, {"hashed_password": 0})]
+    user_by_id: dict[str, dict] = {str(u["_id"]): u for u in users}
+
+    sheets = [s async for s in db[COLLECTION_GOAL_SHEETS].find({})]
+    checkins = [c async for c in db[COLLECTION_CHECKINS].find({})]
+
+    # Latest goal-sheet status per employee (by updated_at, then workflow rank)
+    latest_by_emp: dict[str, tuple[datetime, str]] = {}
+    for s in sheets:
+        emp_id = str(s.get("employee_id", ""))
+        if not emp_id:
+            continue
+        st = s.get("status", "")
+        updated = s.get("updated_at") or datetime.min.replace(tzinfo=timezone.utc)
+        prev = latest_by_emp.get(emp_id)
+        if prev is None:
+            latest_by_emp[emp_id] = (updated, st)
+            continue
+        prev_updated, prev_st = prev
+        try:
+            rank_new = _STATUS_RANK[GoalSheetStatus(st)]
+            rank_old = _STATUS_RANK[GoalSheetStatus(prev_st)]
+        except ValueError:
+            rank_new, rank_old = -1, -1
+        if updated > prev_updated or (updated == prev_updated and rank_new > rank_old):
+            latest_by_emp[emp_id] = (updated, st)
+
+    sheet_status_by_emp: dict[str, str] = {eid: st for eid, (_, st) in latest_by_emp.items()}
+
+    # Most recent check-in date per employee (created_by = user Mongo id)
+    last_checkin: dict[str, datetime] = {}
+    for ci in checkins:
+        uid = str(ci.get("created_by", ""))
+        if not uid:
+            continue
+        dt = ci.get("check_in_date")
+        if dt and (uid not in last_checkin or dt > last_checkin[uid]):
+            last_checkin[uid] = dt
+
+    results: list[dict[str, Any]] = []
+    for u in users:
+        uid = str(u["_id"])
+        role = u.get("role", "")
+        if isinstance(role, str):
+            role = role.upper().strip()
+
+        manager_name: str | None = None
+        mgr_id = u.get("manager_id")
+        if mgr_id:
+            mgr = user_by_id.get(str(mgr_id))
+            if mgr:
+                manager_name = mgr.get("name")
+
+        created = u.get("created_at")
+        results.append({
+            "_id": uid,
+            "employee_id": u.get("employee_id", ""),
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "role": role,
+            "department": u.get("department", ""),
+            "phone": u.get("phone"),
+            "is_active": u.get("is_active", True),
+            "manager_name": manager_name,
+            "goal_sheet_status": sheet_status_by_emp.get(uid),
+            "last_checkin_date": last_checkin[uid].isoformat() if uid in last_checkin else None,
+            "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
+        })
+
+    results.sort(key=lambda r: (r.get("name") or "").lower())
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: completion dashboard
 # ---------------------------------------------------------------------------
 
 @router.get("/completion")

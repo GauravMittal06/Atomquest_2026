@@ -1,24 +1,16 @@
 /**
  * Admin — All Goal Sheets (Governance & Unlock Workflows)
  *
- * This page is the single place for Admin to:
- *   - View all goal sheets across the organisation with status filters
- *   - Unlock LOCKED sheets (LOCKED → RETURNED) with mandatory reason
- *   - Review the full unlock history / governance audit timeline
- *
- * Data sources:
- *   GET /api/users/team                   — employee/manager info
- *   GET /api/goalsheets/                  — all sheets (with embedded audit_log)
- *   GET /api/goalsheets/unlock-history    — sheets with UNLOCKED entries
- *   POST /api/goalsheets/{id}/unlock      — Admin unlock action
- *
- * Permissions: docs/ROLE_PERMISSIONS.md §Admin — "Unlock approved goals", "View audit logs"
- * Workflow:    docs/WORKFLOWS.md §Goal Lifecycle — LOCKED → RETURNED
- * Audit:       docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
+ * Hierarchical accordion grouped by employee:
+ *   GET /api/admin/all-goal-sheets  — employees with nested goal sheets
+ *   GET /api/goalsheets/unlock-history
+ *   POST /api/goalsheets/{id}/unlock
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  Building2,
   Clock,
+  FileSearch,
   History,
   Loader2,
   ShieldAlert,
@@ -29,6 +21,13 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Button } from '@/components/ui/button'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -36,7 +35,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { GoalSheet, GoalSheetStatus, UnlockRequest, User } from '@/types'
+import type {
+  AdminAllGoalSheetsResponse,
+  AdminEmployeeGoalSheet,
+  AdminEmployeeGoalSheets,
+  GoalSheetStatus,
+  UnlockRequest,
+} from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +61,11 @@ interface UnlockHistoryItem {
   total_unlocks: number
 }
 
+interface UnlockTarget {
+  sheet: AdminEmployeeGoalSheet
+  employee: AdminEmployeeGoalSheets
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -72,8 +82,14 @@ function formatTs(ts: string | null | undefined): string {
   } catch { return ts ?? '—' }
 }
 
-function hasUnlock(sheet: GoalSheet): boolean {
-  return (sheet.audit_log ?? []).some((e) => e.action === 'UNLOCKED')
+function formatScore(score?: number | null): string {
+  if (score == null) return '—'
+  return score.toFixed(1)
+}
+
+function sheetLabel(sheet: AdminEmployeeGoalSheet): string {
+  const rev = sheet.revision > 1 ? ` (Revision ${sheet.revision})` : ''
+  return `${sheet.fy}${rev}`
 }
 
 // ---------------------------------------------------------------------------
@@ -81,44 +97,49 @@ function hasUnlock(sheet: GoalSheet): boolean {
 // ---------------------------------------------------------------------------
 
 export function AdminGoalSheetsPage() {
-  const [allUsers, setAllUsers] = useState<User[]>([])
-  const [allSheets, setAllSheets] = useState<GoalSheet[]>([])
+  const [data, setData] = useState<AdminAllGoalSheetsResponse | null>(null)
   const [unlockHistory, setUnlockHistory] = useState<UnlockHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<StatusFilter>('ALL')
+  const [departmentFilter, setDepartmentFilter] = useState('')
 
-  // ── Unlock dialog ──────────────────────────────────────────────────────
-  const [unlockTarget, setUnlockTarget] = useState<GoalSheet | null>(null)
+  const [unlockTarget, setUnlockTarget] = useState<UnlockTarget | null>(null)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockLoading, setUnlockLoading] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement | null>(null)
 
-  // ── Active tab ─────────────────────────────────────────────────────────
   const [tab, setTab] = useState<'sheets' | 'history'>('sheets')
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [usersRes, sheetsRes, historyRes] = await Promise.all([
-        api.get<User[]>('/users/team'),
-        api.get<GoalSheet[]>('/goalsheets/'),
+      const params: Record<string, string> = {}
+      if (filter !== 'ALL') params.status = filter
+      if (departmentFilter) params.department = departmentFilter
+
+      const [sheetsRes, historyRes] = await Promise.all([
+        api.get<AdminAllGoalSheetsResponse>('/admin/all-goal-sheets', { params }),
         api.get<UnlockHistoryItem[]>('/goalsheets/unlock-history'),
       ])
-      setAllUsers(usersRes.data)
-      setAllSheets(sheetsRes.data)
+      setData(sheetsRes.data)
       setUnlockHistory(historyRes.data)
     } catch {
       // Non-fatal
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [filter, departmentFilter])
 
   useEffect(() => { loadData() }, [loadData])
 
-  function openUnlockDialog(sheet: GoalSheet) {
-    setUnlockTarget(sheet)
+  function clearFilters() {
+    setFilter('ALL')
+    setDepartmentFilter('')
+  }
+
+  function openSheetUnlock(employee: AdminEmployeeGoalSheets, sheet: AdminEmployeeGoalSheet) {
+    setUnlockTarget({ sheet, employee })
     setUnlockReason('')
     setUnlockError(null)
     setTimeout(() => reasonRef.current?.focus(), 80)
@@ -138,17 +159,18 @@ export function AdminGoalSheetsPage() {
       setUnlockError('A reason is required before unlocking.')
       return
     }
+
+    if (unlockTarget.sheet.status !== 'LOCKED') {
+      setUnlockError('No locked goal sheets to unlock.')
+      return
+    }
+
     setUnlockLoading(true)
     setUnlockError(null)
     try {
       const body: UnlockRequest = { reason }
-      await api.post(`/goalsheets/${unlockTarget._id}/unlock`, body)
-      const [sheetsRes, historyRes] = await Promise.all([
-        api.get<GoalSheet[]>('/goalsheets/'),
-        api.get<UnlockHistoryItem[]>('/goalsheets/unlock-history'),
-      ])
-      setAllSheets(sheetsRes.data)
-      setUnlockHistory(historyRes.data)
+      await api.post(`/goalsheets/${unlockTarget.sheet.sheet_id}/unlock`, body)
+      await loadData()
       setUnlockTarget(null)
       setUnlockReason('')
     } catch (err: unknown) {
@@ -162,24 +184,13 @@ export function AdminGoalSheetsPage() {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Derived
-  // ---------------------------------------------------------------------------
-
-  const userMap = new Map(allUsers.map((u) => [u._id, u]))
-
-  const filteredSheets = filter === 'ALL'
-    ? allSheets
-    : allSheets.filter((s) => s.status === filter)
-
-  const statusCounts: Record<GoalSheetStatus, number> = {
+  const employees = data?.employees ?? []
+  const departments = data?.departments ?? []
+  const totalSheets = data?.total_sheets ?? 0
+  const filteredSheets = data?.filtered_sheet_count ?? totalSheets
+  const statusCounts = data?.status_counts ?? {
     DRAFT: 0, SUBMITTED: 0, RETURNED: 0, APPROVED: 0, LOCKED: 0,
   }
-  for (const s of allSheets) {
-    if (s.status in statusCounts) statusCounts[s.status as GoalSheetStatus]++
-  }
-
-  const targetEmp = unlockTarget ? userMap.get(unlockTarget.employee_id) : null
 
   if (loading) {
     return (
@@ -192,7 +203,6 @@ export function AdminGoalSheetsPage() {
   return (
     <div className="space-y-5">
 
-      {/* ── Header ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="breadcrumb">Admin · Goal Sheets</p>
@@ -206,7 +216,6 @@ export function AdminGoalSheetsPage() {
         </span>
       </div>
 
-      {/* ── Tab switcher ── */}
       <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 w-fit">
         {([['sheets', 'Goal Sheets'], ['history', 'Unlock History']] as const).map(([key, label]) => (
           <button
@@ -230,90 +239,127 @@ export function AdminGoalSheetsPage() {
 
       {tab === 'sheets' && (
         <>
-          {/* ── Status filter pills ── */}
-          <div className="flex flex-wrap gap-2">
-            <FilterPill
-              active={filter === 'ALL'}
-              onClick={() => setFilter('ALL')}
-              label={`All (${allSheets.length})`}
-            />
-            {ALL_STATUSES.map((st) => (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-2">
               <FilterPill
-                key={st}
-                active={filter === st}
-                onClick={() => setFilter(st)}
-                label={`${st.charAt(0) + st.slice(1).toLowerCase()} (${statusCounts[st]})`}
+                active={filter === 'ALL'}
+                onClick={() => setFilter('ALL')}
+                label={`All (${filter === 'ALL' && !departmentFilter ? totalSheets : filteredSheets})`}
               />
-            ))}
+              {ALL_STATUSES.map((st) => (
+                <FilterPill
+                  key={st}
+                  active={filter === st}
+                  onClick={() => setFilter(st)}
+                  label={`${st.charAt(0) + st.slice(1).toLowerCase()} (${statusCounts[st]})`}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 ml-auto">
+              <Building2 size={14} className="text-slate-400" />
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="input py-1.5 text-xs min-w-[160px]"
+              >
+                <option value="">All departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* ── Sheets table ── */}
           <div className="card overflow-hidden p-0">
-            {filteredSheets.length === 0 ? (
-              <p className="px-5 py-10 text-sm text-slate-400 italic text-center">
-                No sheets matching this filter.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 uppercase tracking-wide border-b border-slate-100">
-                    <tr>
-                      <th className="th">Employee</th>
-                      <th className="th">Department</th>
-                      <th className="th">Period</th>
-                      <th className="th">Status</th>
-                      <th className="th">Goals</th>
-                      <th className="th">Score</th>
-                      <th className="th">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredSheets.map((sheet) => {
-                      const emp = userMap.get(sheet.employee_id)
-                      const isAdminUnlocked = hasUnlock(sheet)
-                      return (
-                        <tr key={sheet._id} className="tr">
-                          <td className="td">
-                            <p className="font-medium text-slate-900">{emp?.name ?? sheet.employee_id}</p>
-                            <p className="text-xs text-slate-400">{emp?.employee_id ?? ''}</p>
-                          </td>
-                          <td className="td">{emp?.department}</td>
-                          <td className="td">{sheet.period_label}</td>
-                          <td className="td">
-                            <div className="flex flex-col gap-1">
-                              <StatusBadge status={sheet.status as GoalSheetStatus} />
-                              {isAdminUnlocked && (
-                                <span className="flex items-center gap-1 text-[10px] text-purple-600">
-                                  <ShieldAlert size={9} /> Admin override
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="td">{sheet.goal_count}</td>
-                          <td className="td">
-                            {sheet.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
-                          </td>
-                          <td className="td">
-                            {sheet.status === 'LOCKED' ? (
-                              <button
-                                onClick={() => openUnlockDialog(sheet)}
-                                className="btn-primary btn-sm"
-                              >
-                                <Unlock size={11} />
-                                Unlock
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+            {employees.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <FileSearch className="h-10 w-10 text-slate-300 mb-3" />
+                <p className="text-sm text-slate-500">
+                  No goal sheets match the selected filters.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={clearFilters}
+                >
+                  Clear filters
+                </Button>
               </div>
+            ) : (
+              <Accordion type="multiple" className="w-full divide-y divide-slate-200">
+                {employees.map((emp) => (
+                  <AccordionItem key={emp.user_id} value={emp.user_id} className="border-0">
+                    <AccordionTrigger className="hover:no-underline hover:bg-slate-50/50">
+                      <EmployeeRow employee={emp} />
+                    </AccordionTrigger>
+                    <AccordionContent className="bg-slate-50/50 py-2">
+                      <Accordion type="multiple" className="px-3">
+                        {emp.goal_sheets.map((sheet) => (
+                          <AccordionItem
+                            key={sheet.sheet_id}
+                            value={sheet.sheet_id}
+                            className="rounded-lg border border-slate-200 bg-white mb-2 overflow-hidden border-l-0"
+                          >
+                            <AccordionTrigger className="py-3 px-4 hover:no-underline hover:bg-slate-50/50">
+                              <GoalSheetRow
+                                sheet={sheet}
+                                onUnlock={(e) => {
+                                  e.stopPropagation()
+                                  openSheetUnlock(emp, sheet)
+                                }}
+                              />
+                            </AccordionTrigger>
+                            <AccordionContent className="px-4 pb-3">
+                              {sheet.goals.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic py-2">No goals on this sheet.</p>
+                              ) : (
+                                <div className="overflow-x-auto rounded-md border border-slate-100 ml-4 pl-4 border-l-2 border-l-blue-200">
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-slate-50 text-slate-500 uppercase tracking-wide">
+                                      <tr>
+                                        <th className="th">Thrust Area</th>
+                                        <th className="th">Description</th>
+                                        <th className="th">Weight</th>
+                                        <th className="th">Achievement</th>
+                                        <th className="th">Score</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {sheet.goals.map((g) => (
+                                        <tr key={g.goal_id}>
+                                          <td className="td">{g.thrust_area_label}</td>
+                                          <td className="td max-w-xs truncate" title={g.description}>
+                                            {g.description}
+                                          </td>
+                                          <td className="td">{g.weightage ?? '—'}%</td>
+                                          <td className="td">
+                                            {g.achievement_pct != null ? `${g.achievement_pct.toFixed(1)}%` : '—'}
+                                          </td>
+                                          <td className="td">
+                                            {g.goal_score != null ? g.goal_score.toFixed(1) : '—'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
             )}
           </div>
+
+          <p className="text-xs text-slate-400 text-center">
+            {employees.length} employee{employees.length !== 1 ? 's' : ''} · {filteredSheets} of {totalSheets} goal sheet{totalSheets !== 1 ? 's' : ''}
+          </p>
         </>
       )}
 
@@ -335,7 +381,6 @@ export function AdminGoalSheetsPage() {
             <div className="divide-y divide-slate-100">
               {unlockHistory.map((item, idx) => (
                 <div key={item.sheet_id + idx} className="px-5 py-4 flex items-start gap-4">
-                  {/* Timeline dot */}
                   <div className="mt-1.5 flex-shrink-0">
                     <div className="h-2 w-2 rounded-full bg-purple-400 ring-2 ring-purple-100" />
                   </div>
@@ -385,7 +430,6 @@ export function AdminGoalSheetsPage() {
         </div>
       )}
 
-      {/* ── Unlock Reason Dialog ── */}
       <Dialog open={!!unlockTarget} onOpenChange={(open) => { if (!open) closeUnlockDialog() }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -399,30 +443,25 @@ export function AdminGoalSheetsPage() {
               Transitions the sheet from{' '}
               <span className="font-semibold text-purple-700">Locked</span> →{' '}
               <span className="font-semibold text-amber-600">Returned</span>.
-              The employee can then revise and resubmit.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Context card */}
           {unlockTarget && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm space-y-1.5">
-              <ContextRow label="Employee" value={targetEmp?.name ?? unlockTarget.employee_id} />
-              <ContextRow label="Department" value={targetEmp?.department ?? '—'} />
-              <ContextRow label="Period" value={unlockTarget.period_label} />
               <ContextRow
-                label="Status"
-                value={<StatusBadge status="LOCKED" />}
+                label="Employee"
+                value={`${unlockTarget.employee.name} (${unlockTarget.employee.employee_id})`}
               />
+              <ContextRow label="Department" value={unlockTarget.employee.department} />
+              <ContextRow label="Period" value={sheetLabel(unlockTarget.sheet)} />
             </div>
           )}
 
-          {/* Workflow note */}
           <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 leading-relaxed">
             The employee will see an unlock notification with this reason and will be
             able to revise and resubmit. This action is permanently logged in the audit trail.
           </div>
 
-          {/* Reason field */}
           <div className="space-y-1.5">
             <label className="block text-sm font-semibold text-slate-700">
               Reason <span className="text-red-500">*</span>
@@ -433,26 +472,14 @@ export function AdminGoalSheetsPage() {
               value={unlockReason}
               onChange={(e) => setUnlockReason(e.target.value)}
               placeholder="e.g. Correction required in Q2 targets — employee needs to revise weightage distribution."
-              className={cn(
-                'input resize-none',
-                unlockError && 'input-error',
-              )}
+              className={cn('input resize-none', unlockError && 'input-error')}
             />
-            <p className="text-xs text-slate-400">
-              Visible to employee, their manager, and recorded permanently in the audit trail.
-            </p>
           </div>
 
-          {unlockError && (
-            <p className="text-sm text-red-600">{unlockError}</p>
-          )}
+          {unlockError && <p className="text-sm text-red-600">{unlockError}</p>}
 
           <DialogFooter>
-            <button
-              onClick={closeUnlockDialog}
-              disabled={unlockLoading}
-              className="btn-outline"
-            >
+            <button onClick={closeUnlockDialog} disabled={unlockLoading} className="btn-outline">
               Cancel
             </button>
             <button
@@ -466,6 +493,83 @@ export function AdminGoalSheetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Row components
+// ---------------------------------------------------------------------------
+
+function EmployeeRow({ employee }: { employee: AdminEmployeeGoalSheets }) {
+  return (
+    <div className="flex flex-1 flex-wrap items-center gap-x-2 gap-y-2 w-full min-w-0 pr-2">
+      <span className="font-medium text-base text-slate-900">{employee.name}</span>
+      <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-500 text-xs px-2 py-0.5">
+        {employee.employee_id}
+      </span>
+
+      <span className="border-l border-slate-200 mx-3 h-4 inline-block" aria-hidden />
+      <span className="text-sm text-slate-500">{employee.department}</span>
+
+      <span className="border-l border-slate-200 mx-3 h-4 inline-block" aria-hidden />
+      <span className="text-sm text-slate-500">{employee.manager}</span>
+
+      {employee.latest_status && (
+        <>
+          <span className="border-l border-slate-200 mx-3 h-4 inline-block hidden sm:inline" aria-hidden />
+          <StatusBadge status={employee.latest_status} />
+        </>
+      )}
+
+      <span className="border-l border-slate-200 mx-3 h-4 inline-block hidden md:inline" aria-hidden />
+      <span className="text-sm">
+        <span className="text-slate-500">Score: </span>
+        <span className="font-medium text-slate-900">{formatScore(employee.latest_score)}</span>
+      </span>
+
+      <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 text-xs px-2 py-0.5 ml-1">
+        {employee.goal_sheet_count} sheet{employee.goal_sheet_count !== 1 ? 's' : ''}
+      </span>
+    </div>
+  )
+}
+
+function GoalSheetRow({
+  sheet,
+  onUnlock,
+}: {
+  sheet: AdminEmployeeGoalSheet
+  onUnlock: (e: React.MouseEvent) => void
+}) {
+  return (
+    <div className="flex flex-1 items-center gap-x-3 gap-y-1 w-full min-w-0 pr-2 border-l-2 border-blue-200 ml-4 pl-4 text-sm">
+      <span className="font-medium text-slate-800">{sheetLabel(sheet)}</span>
+      <StatusBadge status={sheet.status} />
+      {sheet.has_admin_unlock && (
+        <span className="flex items-center gap-1 text-[10px] text-purple-600">
+          <ShieldAlert size={9} /> Admin override
+        </span>
+      )}
+      <span className="text-slate-500">
+        Goals: {sheet.goals_count}
+      </span>
+      <span className="text-slate-500">
+        Score: {formatScore(sheet.score)}
+      </span>
+
+      {sheet.status === 'LOCKED' && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="ml-auto shrink-0"
+          onClick={onUnlock}
+        >
+          <Unlock size={12} />
+          Unlock
+        </Button>
+      )}
     </div>
   )
 }

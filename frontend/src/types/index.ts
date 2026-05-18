@@ -173,6 +173,52 @@ export interface UnlockRequest {
   reason: string
 }
 
+/** Goal summary embedded in GET /api/admin/all-goal-sheets */
+export interface AdminGoalSheetGoal {
+  goal_id: string
+  thrust_area: string
+  thrust_area_label: string
+  description: string
+  weightage?: number
+  achievement_pct?: number
+  goal_score?: number
+}
+
+/** Single goal sheet row in GET /api/admin/all-goal-sheets */
+export interface AdminEmployeeGoalSheet {
+  sheet_id: string
+  fy: string
+  period_id: string
+  revision: number
+  status: GoalSheetStatus
+  goals_count: number
+  score?: number | null
+  has_admin_unlock: boolean
+  goals: AdminGoalSheetGoal[]
+}
+
+/** Employee group in GET /api/admin/all-goal-sheets */
+export interface AdminEmployeeGoalSheets {
+  employee_id: string
+  user_id: string
+  name: string
+  department: string
+  manager: string
+  latest_status?: GoalSheetStatus | null
+  latest_score?: number | null
+  goal_sheet_count: number
+  locked_sheet_count: number
+  goal_sheets: AdminEmployeeGoalSheet[]
+}
+
+export interface AdminAllGoalSheetsResponse {
+  employees: AdminEmployeeGoalSheets[]
+  departments: string[]
+  total_sheets: number
+  filtered_sheet_count: number
+  status_counts: Record<GoalSheetStatus, number>
+}
+
 export interface GoalSheet {
   _id: string
   employee_id: string

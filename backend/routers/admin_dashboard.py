@@ -250,7 +250,7 @@ def _compute_employee_submission(
 
     # Build a set of employee_ids who have at least one non-Draft sheet.
     submitted_emp_ids: set[str] = {
-        s["employee_id"] for s in sheets if s.get("status") in SUBMITTED_STATES
+        str(s.get("employee_id", "")) for s in sheets if s.get("status") in SUBMITTED_STATES
     }
 
     submitted_count = sum(1 for u in employees if str(u["_id"]) in submitted_emp_ids)

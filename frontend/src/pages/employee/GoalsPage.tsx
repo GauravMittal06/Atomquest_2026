@@ -1,26 +1,12 @@
 /**
- * GoalsPage — Employee's "My Goal Sheet" page.
+ * GoalsPage — Employee "My Goal Sheet"
  *
- * States:
- *   loading  → spinner while fetching existing sheets
- *   no-sheet → shows <CreateGoalSheetForm />
- *   has-draft-sheet → shows sheet overview + goals table + Submit for Approval button
- *   has-submitted/returned/approved/locked sheet → read-only view with status badge
- *
- * Shared goals (docs/SHARED_GOALS.md):
- *   - Displayed with a SHARED badge and lock icon
- *   - All fields except Weightage are read-only for employees
- *   - Inline weightage editing is available when sheet is DRAFT/RETURNED
- *   - Achievement is synced automatically from the primary owner
- *
- * Permissions (docs/ROLE_PERMISSIONS.md):
- *   EMPLOYEE can create, view, edit (Draft/Returned), and submit their own sheet.
+ * Read-only reference of goal definitions. Check-in inputs and manager
+ * comments live on the Check-ins tab. Workflow actions appear below the table.
  */
-
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertCircle,
-  CheckCircle2,
   ClipboardList,
   Link2,
   Loader2,
@@ -33,20 +19,25 @@ import {
 
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { formatScore } from '@/utils/scoring'
 import { useCycleStatus } from '@/lib/useCycleStatus'
+import { UomTypeBadge } from '@/components/employee/UomTypeBadge'
 import { isCheckInWindowOpen, THRUST_AREA_LABELS, type Goal, type GoalSheet } from '@/types'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { CreateGoalSheetForm } from '@/components/goals/CreateGoalSheetForm'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// GoalsPage
-// ---------------------------------------------------------------------------
+function formatTarget(goal: Goal): string {
+  if (goal.target_value == null || goal.target_value === '') return '—'
+  const val =
+    typeof goal.target_value === 'number'
+      ? goal.target_value.toLocaleString()
+      : String(goal.target_value)
+  return goal.unit_of_measure ? `${val} ${goal.unit_of_measure}` : val
+}
 
 export function GoalsPage() {
   const [phase, setPhase] = useState<'loading' | 'create' | 'view'>('loading')
@@ -58,7 +49,6 @@ export function GoalsPage() {
 
   const { status: cycleStatus } = useCycleStatus()
 
-  // Inline weightage editing for shared goals (SHARED_GOALS.md — only field employees can change)
   const [sharedWeightageEdits, setSharedWeightageEdits] = useState<Record<string, string>>({})
   const [sharedWeightageErrors, setSharedWeightageErrors] = useState<Record<string, string>>({})
   const [savingSharedGoal, setSavingSharedGoal] = useState<string | null>(null)
@@ -73,7 +63,6 @@ export function GoalsPage() {
         setPhase('create')
         return
       }
-      // Use the most recent sheet
       const latest = sheets.sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       )[0]
@@ -83,6 +72,7 @@ export function GoalsPage() {
       setGoals(goalsRes.data)
       setPhase('view')
     } catch {
+      setError('Failed to load goal sheet.')
       setPhase('create')
     }
   }, [])
@@ -90,10 +80,6 @@ export function GoalsPage() {
   useEffect(() => {
     loadSheet()
   }, [loadSheet])
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
 
   const handleCreateSuccess = (newSheet: GoalSheet, newGoals: Goal[]) => {
     setSheet(newSheet)
@@ -107,7 +93,7 @@ export function GoalsPage() {
     setError(null)
     try {
       await api.patch(`/goals/sheet/${sheet._id}/submit`)
-      setSheet((prev) => prev ? { ...prev, status: 'SUBMITTED' } : prev)
+      setSheet((prev) => (prev ? { ...prev, status: 'SUBMITTED' } : prev))
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } }
       setError(axiosErr?.response?.data?.detail ?? 'Failed to submit. Please try again.')
@@ -132,11 +118,14 @@ export function GoalsPage() {
     }
   }
 
-  // ── Shared-goal inline weightage handlers ──────────────────────────────────
   function handleSharedWeightageChange(goalId: string, value: string) {
     setSharedWeightageEdits((prev) => ({ ...prev, [goalId]: value }))
     setSharedWeightageErrors((prev) => ({ ...prev, [goalId]: '' }))
-    setSavedSharedGoals((prev) => { const n = new Set(prev); n.delete(goalId); return n })
+    setSavedSharedGoals((prev) => {
+      const n = new Set(prev)
+      n.delete(goalId)
+      return n
+    })
   }
 
   async function handleSaveSharedWeightage(goal: Goal) {
@@ -170,14 +159,16 @@ export function GoalsPage() {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
   if (phase === 'loading') {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="space-y-6">
+        <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full" />
       </div>
     )
   }
@@ -188,9 +179,7 @@ export function GoalsPage() {
       <div className="space-y-6">
         <div>
           <p className="breadcrumb">Employee · Goals</p>
-          <h1 className="page-title">
-            {isEditing ? 'Edit Goal Sheet' : 'Create Goal Sheet'}
-          </h1>
+          <h1 className="page-title">{isEditing ? 'Edit Goal Sheet' : 'Create Goal Sheet'}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {isEditing
               ? 'Update your goals below. Shared goals are read-only except for Weightage.'
@@ -206,15 +195,13 @@ export function GoalsPage() {
     )
   }
 
-  // ── View existing sheet ──
   if (!sheet) return null
 
   const isEditable = sheet.status === 'DRAFT' || sheet.status === 'RETURNED'
-  const canSubmit = sheet.status === 'DRAFT' || sheet.status === 'RETURNED'
+  const showAchievement = sheet.status === 'APPROVED' || sheet.status === 'LOCKED'
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="breadcrumb">Employee · Goals</p>
@@ -224,12 +211,9 @@ export function GoalsPage() {
             {sheet.total_weightage} % allocated
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge status={sheet.status} />
-        </div>
+        <StatusBadge status={sheet.status} />
       </div>
 
-      {/* Error banner */}
       {error && (
         <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -237,17 +221,6 @@ export function GoalsPage() {
         </div>
       )}
 
-      {/* Manager comment (RETURNED status) */}
-      {sheet.status === 'RETURNED' && sheet.review_comment && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
-            Manager Comment
-          </p>
-          <p className="text-sm text-amber-900">{sheet.review_comment}</p>
-        </div>
-      )}
-
-      {/* KPI summary row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <SummaryTile
           label="Goals"
@@ -268,26 +241,25 @@ export function GoalsPage() {
             sheet.status === 'DRAFT'
               ? 'Being edited'
               : sheet.status === 'SUBMITTED'
-              ? 'Awaiting review'
-              : sheet.status === 'RETURNED'
-              ? 'Needs revision'
-              : sheet.status === 'APPROVED' || sheet.status === 'LOCKED'
-              ? cycleStatus && isCheckInWindowOpen(cycleStatus.state)
-                ? `Check-ins open — ${cycleStatus.active_quarter}`
-                : 'Check-ins closed'
-              : 'Final — locked'
+                ? 'Awaiting review'
+                : sheet.status === 'RETURNED'
+                  ? 'Needs revision'
+                  : sheet.status === 'APPROVED' || sheet.status === 'LOCKED'
+                    ? cycleStatus && isCheckInWindowOpen(cycleStatus.state)
+                      ? `Check-ins open — ${cycleStatus.active_quarter}`
+                      : 'Check-ins closed'
+                    : 'Final — locked'
           }
           ok={sheet.status === 'APPROVED' || sheet.status === 'SUBMITTED'}
         />
         <SummaryTile
           label="Score"
-          value={sheet.overall_score != null ? `${sheet.overall_score.toFixed(1)} / 100` : '—'}
+          value={sheet.overall_score != null ? `${formatScore(sheet.overall_score)} / 100` : '—'}
           sub="Based on check-ins"
           ok={false}
         />
       </div>
 
-      {/* Goals table */}
       <Card className={cn('card overflow-hidden p-0')}>
         <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -318,15 +290,14 @@ export function GoalsPage() {
                   <th className="th">UoM</th>
                   <th className="th">Target</th>
                   <th className="th">Wt. %</th>
-                  {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') ? (
-                    <th className="th">Achievement</th>
-                  ) : null}
+                  {showAchievement ? <th className="th">Achievement</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {goals.map((goal, i) => {
                   const isShared = goal.shared_goal_ref?.is_shared === true
-                  const isPrimaryOwner = goal.shared_goal_ref?.primary_owner_id === goal.owner_id
+                  const isPrimaryOwner =
+                    goal.shared_goal_ref?.primary_owner_id === goal.owner_id
                   const canEditWeightage = isEditable && isShared
                   const sharedWeightageVal =
                     sharedWeightageEdits[goal._id] ?? String(goal.weightage)
@@ -337,9 +308,7 @@ export function GoalsPage() {
                   return (
                     <tr key={goal._id} className="tr">
                       <td className="td">{i + 1}</td>
-                      <td className="td">
-                        {THRUST_AREA_LABELS[goal.thrust_area]}
-                      </td>
+                      <td className="td">{THRUST_AREA_LABELS[goal.thrust_area]}</td>
                       <td className="td">
                         <div className="flex items-start gap-1.5">
                           <span className="line-clamp-2">{goal.description}</span>
@@ -357,40 +326,19 @@ export function GoalsPage() {
                         )}
                       </td>
                       <td className="td">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                            goal.uom_type === 'Numeric'
-                              ? 'bg-blue-50 text-blue-700'
-                              : goal.uom_type === 'Timeline'
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-violet-50 text-violet-700'
-                          }`}
-                        >
-                          {goal.uom_type}
-                        </span>
+                        <UomTypeBadge uomType={goal.uom_type} />
                       </td>
                       <td className="td">{goal.unit_of_measure}</td>
                       <td className="td">
-                        {/* Target is ALWAYS read-only for shared goals (SHARED_GOALS.md) */}
                         {isShared ? (
-                          <div className="flex items-center justify-end gap-1">
+                          <span className="inline-flex items-center gap-1">
                             <Lock size={10} className="text-indigo-400 shrink-0" />
-                            <span className="font-mono text-slate-700">
-                              {typeof goal.target_value === 'number'
-                                ? goal.target_value.toLocaleString()
-                                : <span className="text-xs">{String(goal.target_value).slice(0, 40)}</span>}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="font-mono text-slate-700">
-                            {typeof goal.target_value === 'number'
-                              ? goal.target_value.toLocaleString()
-                              : <span className="text-xs">{String(goal.target_value).slice(0, 40)}</span>}
+                            {formatTarget(goal)}
                           </span>
+                        ) : (
+                          formatTarget(goal)
                         )}
                       </td>
-
-                      {/* Weightage — editable inline for shared goals when DRAFT/RETURNED */}
                       <td className="td">
                         {canEditWeightage ? (
                           <div className="flex flex-col items-end gap-0.5">
@@ -416,6 +364,7 @@ export function GoalsPage() {
                                 <span className="text-xs text-green-600 font-medium">✓</span>
                               ) : (
                                 <button
+                                  type="button"
                                   onClick={() => handleSaveSharedWeightage(goal)}
                                   className="btn-primary btn-sm p-1.5 min-w-0"
                                   title="Save weightage"
@@ -432,26 +381,20 @@ export function GoalsPage() {
                           <span>{goal.weightage} %</span>
                         )}
                       </td>
-
-                      {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') && (
+                      {showAchievement && (
                         <td className="td">
                           {goal.achievement_pct != null ? (
-                            <div>
-                              <span
-                                className={
-                                  goal.achievement_pct >= 80
-                                    ? 'font-semibold text-green-600'
-                                    : goal.achievement_pct >= 50
+                            <span
+                              className={
+                                goal.achievement_pct >= 80
+                                  ? 'font-semibold text-green-600'
+                                  : goal.achievement_pct >= 50
                                     ? 'font-semibold text-amber-600'
                                     : 'font-semibold text-red-500'
-                                }
-                              >
-                                {goal.achievement_pct.toFixed(1)} %
-                              </span>
-                              {isShared && !isPrimaryOwner && (
-                                <p className="text-xs text-indigo-400">synced</p>
-                              )}
-                            </div>
+                              }
+                            >
+                              {formatScore(goal.achievement_pct)} %
+                            </span>
                           ) : (
                             <span className="text-slate-300">—</span>
                           )}
@@ -475,8 +418,8 @@ export function GoalsPage() {
                       {sheet.total_weightage} %
                     </span>
                   </td>
-                  {(sheet.status === 'APPROVED' || sheet.status === 'LOCKED') && (
-                    <td className="td">{sheet.overall_score?.toFixed(1) ?? '—'}</td>
+                  {showAchievement && (
+                    <td className="td">{formatScore(sheet.overall_score)}</td>
                   )}
                 </tr>
               </tfoot>
@@ -485,14 +428,68 @@ export function GoalsPage() {
         </CardContent>
       </Card>
 
-      {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-3">
-        {canSubmit && (
+      <ApprovalWorkflowNotice
+        sheet={sheet}
+        isSubmitting={isSubmitting}
+        isDeleting={isDeleting}
+        onEdit={() => setPhase('create')}
+        onSubmit={handleSubmitForApproval}
+        onDelete={handleDeleteDraft}
+      />
+    </div>
+  )
+}
+
+function ApprovalWorkflowNotice({
+  sheet,
+  isSubmitting,
+  isDeleting,
+  onEdit,
+  onSubmit,
+  onDelete,
+}: {
+  sheet: GoalSheet
+  isSubmitting: boolean
+  isDeleting: boolean
+  onEdit: () => void
+  onSubmit: () => void
+  onDelete: () => void
+}) {
+  const comment = sheet.review_comment
+
+  if (sheet.status === 'RETURNED') {
+    return (
+      <Card className="border-amber-200 bg-amber-50">
+        <CardHeader>
+          <CardTitle className="text-base text-amber-900">Returned for Rework</CardTitle>
+          {comment && <CardDescription className="text-amber-800">{comment}</CardDescription>}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-amber-700">Edit your goals and resubmit for approval.</p>
+          <Button variant="outline" className="btn-outline" onClick={onEdit}>
+            Edit Goals
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (sheet.status === 'DRAFT') {
+    const canSubmit = sheet.total_weightage === 100 && sheet.goal_count >= 3
+    return (
+      <Card className="border-slate-200 bg-slate-50">
+        <CardHeader>
+          <CardTitle className="text-base text-slate-800">Draft Goal Sheet</CardTitle>
+          <CardDescription className="text-slate-600">
+            Your goal sheet is in draft. Submit it for manager approval when ready.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
           <Button
             variant="primary"
-            onClick={handleSubmitForApproval}
-            disabled={isSubmitting || sheet.total_weightage !== 100 || sheet.goal_count < 3}
             className="btn-primary"
+            onClick={onSubmit}
+            disabled={isSubmitting || !canSubmit}
           >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -501,40 +498,37 @@ export function GoalsPage() {
             )}
             {isSubmitting ? 'Submitting…' : 'Submit for Approval'}
           </Button>
-        )}
-        {sheet.status === 'APPROVED' && (
-          <Button variant="success" className="btn-outline" disabled>
-            <CheckCircle2 className="h-4 w-4" />
-            Approved — Check-ins Enabled
-          </Button>
-        )}
-        {sheet.status === 'DRAFT' && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDeleteDraft}
-            disabled={isDeleting}
-            className="btn-danger btn-sm"
-          >
+          <Button variant="destructive" size="sm" onClick={onDelete} disabled={isDeleting}>
             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
             {isDeleting ? 'Deleting…' : 'Delete Draft'}
           </Button>
-        )}
-        {canSubmit && (sheet.total_weightage !== 100 || sheet.goal_count < 3) && (
-          <p className="text-xs text-red-500">
-            {sheet.total_weightage !== 100
-              ? `Total weightage is ${sheet.total_weightage} % (must be 100 %).`
-              : `At least 3 goals required (current: ${sheet.goal_count}).`}
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
+          {!canSubmit && (
+            <p className="text-xs text-red-500">
+              {sheet.total_weightage !== 100
+                ? `Total weightage is ${sheet.total_weightage} % (must be 100 %).`
+                : `At least 3 goals required (current: ${sheet.goal_count}).`}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
 
-// ---------------------------------------------------------------------------
-// SummaryTile
-// ---------------------------------------------------------------------------
+  if (sheet.status === 'SUBMITTED') {
+    return (
+      <Card className="border-blue-200 bg-blue-50">
+        <CardHeader>
+          <CardTitle className="text-base text-blue-900">Awaiting Manager Review</CardTitle>
+          <CardDescription className="text-blue-800">
+            Your goal sheet has been submitted and is awaiting manager review.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  return null
+}
 
 function SummaryTile({
   label,

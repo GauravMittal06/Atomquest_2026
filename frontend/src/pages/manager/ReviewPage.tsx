@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { formatScore } from '@/utils/scoring'
 import { cn } from '@/lib/utils'
 import {
   THRUST_AREA_LABELS,

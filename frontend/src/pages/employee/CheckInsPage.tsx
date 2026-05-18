@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { formatScore } from '@/utils/scoring'
 import { cn } from '@/lib/utils'
 import { calculateProgress } from '@/lib/progressCalculator'
 import { useCycleStatus } from '@/lib/useCycleStatus'
@@ -313,7 +314,7 @@ export function CheckInsPage() {
         <div className="text-right text-xs text-slate-400">
           Overall score{' '}
           <span className="font-semibold text-slate-700">
-            {sheet.overall_score != null ? `${sheet.overall_score.toFixed(1)} / 100` : '—'}
+            {sheet.overall_score != null ? `${formatScore(sheet.overall_score)} / 100` : '—'}
           </span>
         </div>
       </header>

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { formatScore } from '@/utils/scoring'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
 import { useAuth } from '@/contexts/AuthContext'
@@ -141,10 +142,10 @@ export function ManagerDashboard() {
     submitted.length > 0 || returned.length > 0 || adminReturned.length > 0
 
   const scores = rows
-    .filter((r) => r.sheet?.overall_score != null)
+    .filter((r) => r.sheet?.overall_score != null && !isNaN(r.sheet.overall_score))
     .map((r) => r.sheet!.overall_score as number)
   const avgScore = scores.length
-    ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)
+    ? scores.reduce((a, b) => a + b, 0) / scores.length
     : null
 
   // Sort rows by urgency
@@ -213,7 +214,7 @@ export function ManagerDashboard() {
         />
         <StatTile
           label="Avg Score"
-          value={avgScore !== null ? avgScore : '—'}
+          value={formatScore(avgScore)}
           sub={avgScore !== null ? 'of 100 pts' : 'After check-ins'}
           icon={<AlertTriangle size={13} className="text-slate-400" />}
         />
@@ -368,7 +369,7 @@ export function ManagerDashboard() {
                           ) : '—'}
                         </td>
                         <td className="td">
-                          {sheet?.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
+                          {formatScore(sheet?.overall_score)}
                         </td>
                         <td className="td">
                           {sheet?.status === 'SUBMITTED' ? (

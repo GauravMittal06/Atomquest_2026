@@ -11,6 +11,7 @@
  * caller is expected to also display an "no data yet" hint via `subtitle`.
  */
 import { cn } from '@/lib/utils'
+import { formatScore } from '@/utils/scoring'
 
 type Tone = 'blue' | 'emerald' | 'amber' | 'purple'
 
@@ -107,7 +108,7 @@ export function CompletionProgressCard({
 
       <div className="mt-4 flex items-baseline gap-2">
         <span className={cn('text-4xl font-bold tabular-nums', styles.text)}>
-          {isEmpty ? '—' : `${safePct.toFixed(1)}`}
+          {isEmpty ? '—' : formatScore(safePct)}
         </span>
         {!isEmpty && <span className="text-lg font-medium text-slate-400">%</span>}
       </div>

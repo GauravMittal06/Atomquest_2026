@@ -27,6 +27,7 @@ from models.check_in import (
 from models.goal_sheet import GoalSheetStatus
 from models.user import TokenData, UserRole
 from services.checkin_window import get_current_cycle_status, is_input_window_open
+from services.live_scoring import enrich_goal_with_live_score, enrich_sheet_with_live_score
 from services.progress_calculator import calculate_progress
 
 router = APIRouter(prefix="/api/checkins", tags=["Check-ins"])
@@ -228,23 +229,14 @@ async def add_manager_remark(
 
 async def _update_goal_achievement(goal_id: str, actual_value, goal: dict, db) -> None:
     """
-    Recalculate achievement_pct and goal_score from the latest check-in,
-    delegating the formula to services/progress_calculator (the documented
-    Min/Max/Timeline/Zero rules — VALIDATION_RULES.md).
+    Update goal's latest_actual_value for tracking purposes.
+    Note: achievement_pct and goal_score are now computed live, not persisted.
     """
-    progress = calculate_progress(
-        uom_type=goal.get("uom_type"),
-        target_value=goal.get("target_value"),
-        actual_value=actual_value,
-        weightage=float(goal.get("weightage", 0)),
-    )
-
+    # Only update the latest_actual_value, scores are computed live
     await db[COLLECTION_GOALS].update_one(
         {"_id": ObjectId(goal_id)},
         {"$set": {
             "latest_actual_value": actual_value,
-            "achievement_pct": progress.achievement_pct,
-            "goal_score": progress.goal_score,
             "updated_at": datetime.utcnow(),
         }},
     )
@@ -255,6 +247,14 @@ async def _update_goal_achievement(goal_id: str, actual_value, goal: dict, db) -
         link_id = shared_ref.get("link_id")
         primary_owner_id = shared_ref.get("primary_owner_id")
         if link_id and primary_owner_id and goal.get("owner_id") == primary_owner_id:
+            # For shared goals, we still need to sync achievement across linked goals
+            # But we compute it live rather than persisting it
+            progress = calculate_progress(
+                uom_type=goal.get("uom_type"),
+                target_value=goal.get("target_value"),
+                actual_value=actual_value,
+                weightage=float(goal.get("weightage", 0)),
+            )
             await _sync_shared_goal_achievement(
                 link_id=link_id,
                 primary_goal_id=goal_id,
@@ -282,12 +282,12 @@ async def _sync_shared_goal_achievement(
         # employee keeps the score they negotiated even when they share a KPI.
         from services.progress_calculator import calculate_goal_score
         linked_score = calculate_goal_score(achievement_pct, float(linked_goal.get("weightage", 0)))
+        # Only update latest_actual_value for shared goals
+        # achievement_pct and goal_score are computed live
         await db[COLLECTION_GOALS].update_one(
             {"_id": linked_goal["_id"]},
             {"$set": {
                 "latest_actual_value": actual_value,
-                "achievement_pct": achievement_pct,
-                "goal_score": linked_score,
                 "updated_at": datetime.utcnow(),
             }},
         )
@@ -295,16 +295,12 @@ async def _sync_shared_goal_achievement(
 
 
 async def _recompute_sheet_overall_score(sheet_id: str, db) -> None:
-    """Sum the per-goal scores into the parent sheet's overall_score."""
-    pipeline = [
-        {"$match": {"goal_sheet_id": sheet_id, "goal_score": {"$ne": None}}},
-        {"$group": {"_id": None, "total_score": {"$sum": "$goal_score"}}},
-    ]
-    total: float | None = None
-    async for result in db[COLLECTION_GOALS].aggregate(pipeline):
-        total = round(result.get("total_score") or 0.0, 2)
-        break
+    """
+    Update sheet timestamp. 
+    Note: overall_score is now computed live, not persisted.
+    """
+    # Only update the timestamp, overall_score is computed live
     await db[COLLECTION_GOAL_SHEETS].update_one(
         {"_id": ObjectId(sheet_id)},
-        {"$set": {"overall_score": total, "updated_at": datetime.utcnow()}},
+        {"$set": {"updated_at": datetime.utcnow()}},
     )

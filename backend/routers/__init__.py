@@ -1,6 +1,7 @@
 from routers.admin import router as admin_router
 from routers.admin_dashboard import router as admin_dashboard_router
 from routers.auth import router as auth_router
+from routers.employee_dashboard import router as employee_dashboard_router
 from routers.manager import router as manager_router
 from routers.users import router as users_router
 from routers.goal_sheets import router as goal_sheets_router
@@ -14,6 +15,7 @@ __all__ = [
     "admin_router",
     "admin_dashboard_router",
     "auth_router",
+    "employee_dashboard_router",
     "manager_router",
     "users_router",
     "goal_sheets_router",

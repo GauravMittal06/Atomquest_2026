@@ -42,7 +42,7 @@ from models.goal import ThrustArea
 from models.goal_sheet import GoalSheetStatus
 from models.user import TokenData, UserRole
 from services.checkin_window import get_current_cycle_status
-from services.progress_calculator import calculate_progress
+from services.live_scoring import compute_quarterly_trend
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
 
@@ -223,7 +223,7 @@ async def get_completion_dashboard(
         ),
         "checkin_summary": _compute_checkin_summary(goals, checkins),
         "thrust_area_distribution": _compute_thrust_area_distribution(goals),
-        "quarterly_trend": _compute_quarterly_trend(goals, checkins),
+        "quarterly_trend": await compute_quarterly_trend(goals, checkins),
     }
 
 
@@ -412,69 +412,4 @@ def _compute_thrust_area_distribution(goals: list[dict]) -> list[dict[str, Any]]
 # Section: quarterly planned-vs-actual trend (bar chart)
 # ---------------------------------------------------------------------------
 
-def _compute_quarterly_trend(
-    goals: list[dict],
-    checkins: list[dict],
-) -> list[dict[str, Any]]:
-    """
-    Quarter-on-Quarter aggregate planned vs actual, sourced from check-in data.
-
-    For each quarter (Q1 → Q4) we walk every check-in filed for that quarter,
-    re-derive its achievement % via the canonical formula in
-    services/progress_calculator (which is itself driven by
-    docs/VALIDATION_RULES.md), and accumulate:
-
-        planned[Q]  = Σ goal.weightage           (= the weighted goal "target")
-        actual[Q]   = Σ goal.weightage × ach%/100  (= weighted delivery)
-
-    The result is two bars per quarter on the same 0-100 weighted scale —
-    instantly comparable and resilient to mixed UoM types across goals.
-    """
-    goals_by_id: dict[str, dict] = {str(g["_id"]): g for g in goals}
-
-    trend: dict[str, dict[str, float | int]] = {
-        q: {"planned": 0.0, "actual": 0.0, "checkin_count": 0} for q in QUARTER_LABELS
-    }
-
-    for ci in checkins:
-        quarter = ci.get("period_label")
-        if quarter not in trend:
-            # Legacy MID_YEAR / YEAR_END check-ins (pre-Q1-Q4 migration) are
-            # intentionally excluded from the dashboard's quarterly view so
-            # the bar chart x-axis stays aligned with the active calendar.
-            continue
-
-        goal = goals_by_id.get(str(ci.get("goal_id")))
-        if not goal:
-            continue
-
-        try:
-            weight = float(goal.get("weightage") or 0.0)
-        except (TypeError, ValueError):
-            weight = 0.0
-        if weight <= 0:
-            continue
-
-        progress = calculate_progress(
-            uom_type=goal.get("uom_type"),
-            target_value=goal.get("target_value"),
-            actual_value=ci.get("actual_value"),
-            weightage=weight,
-        )
-
-        # `progress.goal_score` is already weight × achievement/100.
-        actual = progress.goal_score if progress.goal_score is not None else 0.0
-
-        trend[quarter]["planned"] += weight
-        trend[quarter]["actual"] += actual
-        trend[quarter]["checkin_count"] += 1
-
-    return [
-        {
-            "quarter": q,
-            "planned": _round1(float(trend[q]["planned"])),
-            "actual": _round1(float(trend[q]["actual"])),
-            "checkin_count": int(trend[q]["checkin_count"]),
-        }
-        for q in QUARTER_LABELS
-    ]
+# Quarterly trend computation moved to services/live_scoring.py

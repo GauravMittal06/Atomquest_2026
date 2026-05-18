@@ -27,7 +27,7 @@ import {
 
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { calculateProgress } from '@/lib/progressCalculator'
+import { calculateAchievementPercentage, calculateGoalScore, formatScore, UomType } from '@/utils/scoring'
 import { useCycleStatus } from '@/lib/useCycleStatus'
 import { CycleStatusBanner } from '@/components/checkins/CycleStatusBanner'
 import { KpiCard } from '@/components/shared/KpiCard'
@@ -286,7 +286,7 @@ export function CheckInReviewPage() {
         />
         <KpiCard
           label="Avg Sheet Score"
-          value={summary.avgScore !== null ? summary.avgScore.toFixed(1) : '—'}
+          value={formatScore(summary.avgScore)}
           sub="Approved sheets only"
           icon={<TrendingUp size={18} />}
           accent="purple"
@@ -366,7 +366,7 @@ export function CheckInReviewPage() {
                                 : 'text-xs font-semibold text-red-500'
                             }
                           >
-                            {score.toFixed(1)}{' '}
+                            {formatScore(score)}{' '}
                             <span className="font-normal text-slate-400">/ 100</span>
                           </span>
                         ) : (
@@ -452,7 +452,7 @@ function MemberDetail({
               Sheet score{' '}
               <span className="font-semibold text-slate-700">
                 {sheet.overall_score != null
-                  ? `${sheet.overall_score.toFixed(1)} / 100`
+                  ? `${formatScore(sheet.overall_score)} / 100`
                   : '—'}
               </span>
             </p>
@@ -482,12 +482,10 @@ function MemberDetail({
                   (c) => c.goal_id === goal._id && c.period_label === quarter,
                 )
                 const actual = checkin?.actual_value
-                const progress = calculateProgress(
-                  goal.uom_type,
-                  goal.target_value,
-                  actual,
-                  goal.weightage,
-                )
+                // Use the new scoring authority formulas
+                const uomType = goal.uom_type as UomType
+                const achievementPct = calculateAchievementPercentage(uomType, actual, goal.target_value)
+                const goalScore = calculateGoalScore(achievementPct, goal.weightage)
                 const hasRemarks = !!(checkin?.remarks || checkin?.manager_remark)
                 return (
                   <Fragment key={goal._id}>
@@ -512,26 +510,24 @@ function MemberDetail({
                           : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="td">
-                        {progress.achievementPct === null ? (
+                        {achievementPct == null || isNaN(achievementPct) ? (
                           <span className="text-slate-300">—</span>
                         ) : (
                           <span
                             className={
-                              progress.achievementPct >= 80
+                              achievementPct >= 80
                                 ? 'font-semibold text-emerald-600'
-                                : progress.achievementPct >= 50
+                                : achievementPct >= 50
                                 ? 'font-semibold text-amber-600'
                                 : 'font-semibold text-red-500'
                             }
                           >
-                            {progress.achievementPct.toFixed(1)} %
+                            {formatScore(achievementPct)} %
                           </span>
                         )}
                       </td>
                       <td className="td">
-                        {progress.goalScore !== null
-                          ? progress.goalScore.toFixed(2)
-                          : '—'}
+                        {formatScore(goalScore, 2)}
                       </td>
                       <td className="td">
                         {checkin?.self_rating != null
@@ -726,8 +722,13 @@ function computeWeightedScoreForQuarter(member: TeamMemberData, quarter: PeriodL
       (ci) => ci.goal_id === g._id && ci.period_label === quarter,
     )
     if (!c) continue
-    const { goalScore } = calculateProgress(g.uom_type, g.target_value, c.actual_value, g.weightage)
-    if (goalScore === null) continue
+    
+    // Use the new scoring authority formulas
+    const uomType = g.uom_type as UomType
+    const achievementPct = calculateAchievementPercentage(uomType, c.actual_value, g.target_value)
+    const goalScore = calculateGoalScore(achievementPct, g.weightage)
+    
+    if (goalScore == null || isNaN(goalScore)) continue
     total += goalScore
   }
   return total

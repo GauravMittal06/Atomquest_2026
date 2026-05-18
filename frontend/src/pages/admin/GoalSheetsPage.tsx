@@ -19,6 +19,7 @@ import {
 
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { formatScore as formatScoreUtil } from '@/utils/scoring'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import {
   Accordion,
@@ -82,10 +83,8 @@ function formatTs(ts: string | null | undefined): string {
   } catch { return ts ?? '—' }
 }
 
-function formatScore(score?: number | null): string {
-  if (score == null) return '—'
-  return score.toFixed(1)
-}
+// Use centralized score formatting from utils/scoring.ts
+const formatScore = formatScoreUtil
 
 function sheetLabel(sheet: AdminEmployeeGoalSheet): string {
   const rev = sheet.revision > 1 ? ` (Revision ${sheet.revision})` : ''
@@ -335,10 +334,10 @@ export function AdminGoalSheetsPage() {
                                           </td>
                                           <td className="td">{g.weightage ?? '—'}%</td>
                                           <td className="td">
-                                            {g.achievement_pct != null ? `${g.achievement_pct.toFixed(1)}%` : '—'}
+                                            {g.achievement_pct != null ? `${formatScore(g.achievement_pct)}%` : '—'}
                                           </td>
                                           <td className="td">
-                                            {g.goal_score != null ? g.goal_score.toFixed(1) : '—'}
+                                            {formatScore(g.goal_score)}
                                           </td>
                                         </tr>
                                       ))}

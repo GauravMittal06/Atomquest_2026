@@ -34,3 +34,16 @@ COLLECTION_PERIODS = "appraisal_periods"
 COLLECTION_AUDIT_LOG = "audit_log"
 COLLECTION_SHARED_KPIS = "shared_kpis"
 COLLECTION_CHECKIN_COMMENTS = "checkin_comments"
+
+
+async def ensure_indexes() -> None:
+    """
+    Idempotent index setup for dashboard and live-scoring queries.
+
+    Indexes requested: goal_sheet_id (goals), period_label (checkins),
+    employee_id (goal_sheets).
+    """
+    db = get_database()
+    await db[COLLECTION_GOALS].create_index("goal_sheet_id")
+    await db[COLLECTION_CHECKINS].create_index("period_label")
+    await db[COLLECTION_GOAL_SHEETS].create_index("employee_id")

@@ -27,6 +27,7 @@ import {
 } from 'recharts'
 import { BarChart2 } from 'lucide-react'
 
+import { formatScore } from '@/utils/scoring'
 import type { QuarterlyTrendPoint } from '@/types'
 
 interface QuarterlyTrendChartProps {
@@ -65,20 +66,20 @@ function TrendTooltip({ active, payload, label }: TooltipProps) {
             <span className="inline-block h-2 w-2 rounded-sm bg-slate-400" />
             Planned
           </span>
-          <span className="font-semibold tabular-nums text-slate-700">{planned}</span>
+          <span className="font-semibold tabular-nums text-slate-700">{formatScore(planned)}</span>
         </div>
         <div className="flex items-center justify-between gap-6">
           <span className="flex items-center gap-1.5 text-slate-500">
             <span className="inline-block h-2 w-2 rounded-sm bg-indigo-500" />
             Actual
           </span>
-          <span className="font-semibold tabular-nums text-slate-700">{actual}</span>
+          <span className="font-semibold tabular-nums text-slate-700">{formatScore(actual)}</span>
         </div>
         <div className={`flex items-center justify-between gap-6 border-t border-slate-100 pt-1.5 ${deltaTone}`}>
           <span>Delta</span>
           <span className="font-semibold tabular-nums">
             {deltaSign}
-            {delta.toFixed(1)}
+            {formatScore(Math.abs(delta))}
           </span>
         </div>
         <p className="pt-1 text-[11px] text-slate-400">

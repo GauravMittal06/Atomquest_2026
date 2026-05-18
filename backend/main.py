@@ -7,13 +7,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import close_db, connect_db
+from database import close_db, connect_db, ensure_indexes
 from routers import (
     admin_router,
     admin_dashboard_router,
     auth_router,
     checkin_comments_router,
     checkins_router,
+    employee_dashboard_router,
     goal_sheets_router,
     goals_router,
     manager_router,
@@ -26,6 +27,7 @@ from routers import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    await ensure_indexes()
     yield
     await close_db()
 
@@ -55,6 +57,7 @@ app.include_router(shared_kpis_router)
 app.include_router(system_router)
 app.include_router(admin_router)
 app.include_router(admin_dashboard_router)
+app.include_router(employee_dashboard_router)
 app.include_router(manager_router)
 
 

@@ -1,273 +1,145 @@
 /**
- * Employee Dashboard
+ * Employee Dashboard — "Where do I stand right now?"
  *
- * Answers: "What is my current status and what do I need to do?"
- *
- * Data sources:
- *   GET /api/goalsheets/       — employee's own sheets (server-filtered)
- *   GET /api/goals/sheet/:id   — goals for the most recent sheet
- *   GET /api/system/cycle-status — current appraisal window (CHECKIN_RULES.md)
- *
- * Information hierarchy:
- *   1. Workflow status header     — current state at a glance
- *   2. Attention banners          — only rendered when action is needed
- *   3. Compact stat strip         — 4 key numbers
- *   4. Goals table                — main content body
- *   5. Empty state                — when no sheet exists
- *
- * All existing logic (API calls, navigation, banner conditions) preserved.
- * Only visual hierarchy and component weight changed.
+ * Read-only status-at-a-glance: summary cards, goal sheet status banner,
+ * and quarterly score trend. Goal definitions live on My Goal Sheet.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  AlertCircle,
-  CheckCircle2,
-  ClipboardList,
-  Clock,
-  Loader2,
-  MessageSquareWarning,
-  ShieldAlert,
-} from 'lucide-react'
+import { AlertCircle, ClipboardList } from 'lucide-react'
 
 import api from '@/lib/api'
-import { StatusBadge } from '@/components/shared/StatusBadge'
-import { Button } from '@/components/ui/button'
-import { useAuth } from '@/contexts/AuthContext'
+import { buildQuarterlyScores } from '@/lib/quarterlyScoreTrend'
 import { useCycleStatus } from '@/lib/useCycleStatus'
-import { isCheckInWindowOpen, THRUST_AREA_LABELS, type AuditLogEntry, type Goal, type GoalSheet } from '@/types'
-
-// ---------------------------------------------------------------------------
-// Helpers — preserved from previous implementation
-// ---------------------------------------------------------------------------
-
-function getLatestUnlockEntry(sheet: GoalSheet): AuditLogEntry | null {
-  const entries = (sheet.audit_log ?? []).filter((e) => e.action === 'UNLOCKED')
-  if (!entries.length) return null
-  return entries.reduce((latest, e) =>
-    new Date(e.timestamp) > new Date(latest.timestamp) ? e : latest,
-  )
-}
-
-function formatTs(ts: string): string {
-  try {
-    return new Date(ts).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  } catch { return ts }
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+import { formatScore } from '@/utils/scoring'
+import { GoalSheetStatusBanner } from '@/components/employee/GoalSheetStatusBanner'
+import { ScoreTrendChart } from '@/components/employee/ScoreTrendChart'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/contexts/AuthContext'
+import { isCheckInWindowOpen, type CheckIn, type Goal, type GoalSheet } from '@/types'
 
 export function EmployeeDashboard() {
-  const { user } = useAuth()
+  const { user, authVersion } = useAuth()
   const navigate = useNavigate()
-  const { status: cycleStatus } = useCycleStatus()
+  const { status: cycleStatus, loading: cycleLoading } = useCycleStatus()
 
   const [sheet, setSheet] = useState<GoalSheet | null>(null)
   const [goals, setGoals] = useState<Goal[]>([])
+  const [checkins, setCheckins] = useState<CheckIn[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [chartError, setChartError] = useState<string | null>(null)
+  const [sheetError, setSheetError] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    setError(null)
+    setSheetError(null)
+    setChartError(null)
     try {
       const res = await api.get<GoalSheet[]>('/goalsheets/')
       const sheets = res.data
-      if (sheets.length > 0) {
-        const latest = sheets.sort(
-          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-        )[0]
-        setSheet(latest)
-        const goalsRes = await api.get<Goal[]>(`/goals/sheet/${latest._id}`)
+      if (sheets.length === 0) {
+        setSheet(null)
+        setGoals([])
+        setCheckins([])
+        return
+      }
+      const latest = sheets.sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+      )[0]
+      setSheet(latest)
+
+      try {
+        const [goalsRes, checkinsRes] = await Promise.all([
+          api.get<Goal[]>(`/goals/sheet/${latest._id}`),
+          api.get<CheckIn[]>(`/checkins/sheet/${latest._id}`),
+        ])
         setGoals(goalsRes.data)
+        setCheckins(checkinsRes.data)
+      } catch {
+        setChartError('Failed to load score trend data.')
+        setGoals([])
+        setCheckins([])
       }
     } catch {
-      setError('Failed to load dashboard data.')
+      setSheetError('Failed to load dashboard data.')
+      setSheet(null)
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+  }, [loadData, authVersion])
 
-  // Derived values
-  const unlockEntry = sheet ? getLatestUnlockEntry(sheet) : null
-  const isAdminReturned = sheet?.status === 'RETURNED' && !!unlockEntry
-  const isManagerReturned = sheet?.status === 'RETURNED' && !unlockEntry && !!sheet.review_comment
-  const isLockedOrApproved = sheet?.status === 'LOCKED' || sheet?.status === 'APPROVED'
-  const needsAction = isAdminReturned || isManagerReturned || sheet?.status === 'DRAFT'
-
-  // Cycle window chip: only say "Goal Setting Open" when the employee can
-  // actually edit their sheet. If the sheet is SUBMITTED / APPROVED / LOCKED
-  // the goal-setting window is irrelevant to the user — don't imply editability.
-  const sheetIsEditable = !sheet || sheet.status === 'DRAFT' || sheet.status === 'RETURNED'
-  const cycleChipVisible = !!cycleStatus && (
-    cycleStatus.state !== 'GOAL_SETTING_OPEN' || sheetIsEditable
-  )
   const checkInWindowOpen = cycleStatus ? isCheckInWindowOpen(cycleStatus.state) : false
+  const quarterlyScores = buildQuarterlyScores(goals, checkins)
 
-  if (loading) {
+  if (loading || cycleLoading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
+      <div className="space-y-4">
+        <Skeleton className="h-20 w-full" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-72 w-full" />
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-
-      {/* ── 1. Header: workflow status at a glance ─────────────────────── */}
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="breadcrumb">Employee · Dashboard</p>
-          <h1 className="page-title">
-            {user?.name?.split(' ')[0]}'s Goals
-          </h1>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {sheet ? (
-              <>
-                <span className="text-xs text-slate-400">{sheet.period_label}</span>
-                <span className="text-slate-300 text-xs">·</span>
-                <StatusBadge status={sheet.status} />
-                {needsAction && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold px-2 py-0.5">
-                    <AlertCircle size={9} /> Action needed
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="text-xs text-slate-400">No goal sheet for this period</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="page-title">{user?.name ?? 'My Dashboard'}</h1>
+            {checkInWindowOpen && cycleStatus?.active_quarter && (
+              <Badge
+                variant="outline"
+                className="border-emerald-300 bg-emerald-50 text-emerald-700"
+              >
+                {cycleStatus.active_quarter} Check-in Open
+              </Badge>
             )}
           </div>
+          {user?.employee_id && (
+            <p className="mt-1 text-xs text-slate-500 font-mono">{user.employee_id}</p>
+          )}
           {user?.reporting_to_name && (
             <p className="text-xs text-slate-400 mt-1">
-              Reports to <span className="font-medium text-slate-600">{user.reporting_to_name}</span>
+              Reports to{' '}
+              <span className="font-medium text-slate-600">{user.reporting_to_name}</span>
             </p>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Cycle window indicator — only shown when it reflects an actionable state */}
-          {cycleChipVisible && cycleStatus && (
-            <div className={`hidden sm:flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
-              cycleStatus.state === 'GOAL_SETTING_OPEN'
-                ? 'border-blue-200 bg-blue-50 text-blue-700'
-                : checkInWindowOpen
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-slate-200 bg-slate-50 text-slate-500'
-            }`}>
-              <Clock size={11} />
-              {cycleStatus.state === 'GOAL_SETTING_OPEN'
-                ? 'Goal Setting Open'
-                : checkInWindowOpen
-                ? `${cycleStatus.active_quarter} Check-in Open`
-                : 'Between Windows'}
-            </div>
-          )}
-          {!sheet && (
-            <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
-              Create Goal Sheet
-            </Button>
-          )}
-          {sheet?.status === 'DRAFT' && (
-            <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
-              Continue Editing →
-            </Button>
-          )}
-        </div>
+        {!sheet && (
+          <Button
+            variant="primary"
+            size="sm"
+            className="btn-primary btn-sm"
+            onClick={() => navigate('/employee/goals')}
+          >
+            Create Goal Sheet
+          </Button>
+        )}
       </div>
 
-      {/* ── Error ── */}
-      {error && (
+      {sheetError && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle size={14} className="shrink-0" />
-          <span>{error}</span>
+          <span>{sheetError}</span>
         </div>
       )}
 
-      {/* ── 2. Attention banners — only when action needed ─────────────── */}
-
-      {/* Admin unlock banner */}
-      {isAdminReturned && unlockEntry && (
-        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-purple-100">
-              <ShieldAlert size={13} className="text-purple-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-semibold text-purple-900">Goal Sheet Reopened by Admin</p>
-                <StatusBadge status="RETURNED" />
-              </div>
-              {unlockEntry.comment && (
-                <p className="mt-1.5 text-xs text-slate-700 bg-white rounded border border-purple-100 px-3 py-2 leading-relaxed">
-                  <span className="font-semibold text-purple-700">Reason: </span>
-                  {unlockEntry.comment}
-                </p>
-              )}
-              <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-[11px] text-purple-600 flex items-center gap-1">
-                  <Clock size={10} /> Unlocked {formatTs(unlockEntry.timestamp)}
-                </p>
-                <button
-                  onClick={() => navigate('/employee/goals')}
-                  className="text-xs font-semibold text-purple-700 hover:text-purple-900 underline underline-offset-2 transition-colors"
-                >
-                  Revise & Resubmit →
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Manager feedback banner */}
-      {isManagerReturned && sheet?.review_comment && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-start gap-3">
-            <MessageSquareWarning size={16} className="mt-0.5 shrink-0 text-amber-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-900">Manager Feedback — Action Required</p>
-              <p className="mt-1.5 text-sm text-amber-800 leading-relaxed whitespace-pre-wrap">
-                {sheet.review_comment}
-              </p>
-              <div className="mt-2">
-                <button
-                  onClick={() => navigate('/employee/goals')}
-                  className="text-xs font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
-                >
-                  Revise My Goal Sheet →
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Locked / approved — subtle confirmation, not a banner */}
-      {isLockedOrApproved && (
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
-          <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
-          <span>
-            Goal sheet{' '}
-            <strong className="text-slate-800">
-              {sheet.status === 'LOCKED' ? 'approved and locked' : 'approved'}
-            </strong>.{' '}
-            Goals are read-only.{' '}
-            {checkInWindowOpen
-              ? <span className="text-emerald-700 font-medium">Check-ins enabled for {cycleStatus?.active_quarter}.</span>
-              : <span className="text-slate-500">Check-ins closed — between windows.</span>}
-          </span>
-        </div>
-      )}
-
-      {/* ── 3. Compact stat strip ──────────────────────────────────────── */}
+      {/* Summary cards */}
       {sheet && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile
@@ -284,137 +156,55 @@ export function EmployeeDashboard() {
           />
           <StatTile
             label="Score"
-            value={sheet.overall_score != null ? `${sheet.overall_score.toFixed(1)}` : '—'}
+            value={formatScore(sheet.overall_score)}
             sub={sheet.overall_score != null ? 'of 100 pts' : 'After check-ins'}
           />
           <StatTile
             label="Period"
             value={sheet.period_label}
-            sub={cycleStatus
-              ? checkInWindowOpen
-                ? `${cycleStatus.active_quarter} check-in open`
-                : cycleStatus.state === 'GOAL_SETTING_OPEN'
-                ? 'Goal setting window'
-                : 'Between windows'
-              : 'FY 2025-26'}
+            sub={
+              cycleStatus
+                ? checkInWindowOpen
+                  ? `${cycleStatus.active_quarter} check-in open`
+                  : cycleStatus.state === 'GOAL_SETTING_OPEN'
+                    ? 'Goal setting window'
+                    : 'Between windows'
+                : 'FY 2025-26'
+            }
           />
         </div>
       )}
 
-      {/* ── 4. Goals table — main content ─────────────────────────────── */}
-      {sheet && goals.length > 0 && (
-        <div className="card overflow-hidden p-0">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-            <h2 className="text-sm font-semibold text-slate-900">My Goals</h2>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400">{sheet.period_label}</span>
-              <button
-                onClick={() => navigate('/employee/goals')}
-                className="text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                Manage →
-              </button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>
-                  <th className="th">
-                    Thrust Area
-                  </th>
-                  <th className="th">
-                    Description
-                  </th>
-                  <th className="th">
-                    Wt.%
-                  </th>
-                  <th className="th">
-                    Achievement
-                  </th>
-                  <th className="th">
-                    Score
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {goals.map((goal) => {
-                  const score = ((goal.achievement_pct ?? 0) / 100) * goal.weightage
-                  return (
-                    <tr key={goal._id} className="tr">
-                      <td className="td">
-                        {THRUST_AREA_LABELS[goal.thrust_area]}
-                      </td>
-                      <td className="td">
-                        <span className="line-clamp-2 text-sm">{goal.description}</span>
-                      </td>
-                      <td className="td">
-                        {goal.weightage}
-                      </td>
-                      <td className="td">
-                        {goal.achievement_pct != null ? (
-                          <span className={
-                            goal.achievement_pct >= 80
-                              ? 'text-sm font-semibold text-emerald-600'
-                              : goal.achievement_pct >= 50
-                              ? 'text-sm font-semibold text-amber-600'
-                              : 'text-sm font-semibold text-red-500'
-                          }>
-                            {goal.achievement_pct.toFixed(1)}%
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-                      <td className="td">
-                        {goal.achievement_pct != null ? score.toFixed(1) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot className="bg-slate-50 border-t border-slate-100">
-                <tr>
-                  <td colSpan={2} className="td">
-                    Total
-                  </td>
-                  <td className="td">
-                    {sheet.total_weightage}
-                  </td>
-                  <td className="td" />
-                  <td className="td">
-                    {sheet.overall_score != null ? sheet.overall_score.toFixed(1) : '—'}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+      {sheet && (
+        <GoalSheetStatusBanner
+          sheet={sheet}
+          checkInWindowOpen={checkInWindowOpen}
+        />
       )}
 
-      {/* Goals defined but no check-ins yet */}
-      {sheet && goals.length === 0 && (
-        <div className="card p-8 text-center">
-          <ClipboardList size={28} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-sm font-semibold text-slate-600">No goals added yet</p>
-          <p className="text-xs text-slate-400 mt-1 mb-4">
-            Add at least 3 goals to your goal sheet before submitting.
-          </p>
-          <Button size="sm" variant="primary" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
-            Add Goals →
-          </Button>
-        </div>
+      {sheet && (
+        chartError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {chartError}
+          </div>
+        ) : (
+          <ScoreTrendChart data={quarterlyScores} periodLabel={sheet.period_label} />
+        )
       )}
 
-      {/* ── 5. Empty state — no sheet ─────────────────────────────────── */}
-      {!sheet && (
+      {!sheet && !sheetError && (
         <div className="card p-12 text-center">
           <ClipboardList size={32} className="mx-auto text-slate-300 mb-3" />
           <p className="text-base font-semibold text-slate-700">No goal sheet yet</p>
           <p className="text-sm text-slate-400 mt-1 mb-5 max-w-xs mx-auto">
             Create your goal sheet for FY 2025-26 to get started.
           </p>
-          <Button variant="primary" size="sm" className="btn-primary btn-sm" onClick={() => navigate('/employee/goals')}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="btn-primary btn-sm"
+            onClick={() => navigate('/employee/goals')}
+          >
             Create Goal Sheet
           </Button>
         </div>
@@ -422,10 +212,6 @@ export function EmployeeDashboard() {
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Local: compact stat tile (same pattern as Admin dashboard KpiTile)
-// ---------------------------------------------------------------------------
 
 function StatTile({
   label,

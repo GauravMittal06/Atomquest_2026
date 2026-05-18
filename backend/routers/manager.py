@@ -6,13 +6,15 @@ Enforces manager access control and team visibility.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, List, Optional
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Optional
 
-from auth import get_current_user, require_roles
+from bson import ObjectId
+from fastapi import APIRouter, Depends, Query
+
+from auth import require_roles
 from database import COLLECTION_GOAL_SHEETS, COLLECTION_USERS, get_database
 from models.user import TokenData, UserRole
+from services.live_scoring import compute_live_sheet_scores_batch, LiveSheetScore
 
 router = APIRouter(prefix="/api/manager", tags=["Manager"])
 
@@ -81,6 +83,32 @@ async def get_manager_approvals(
     # Fetch goal sheets
     cursor = db[COLLECTION_GOAL_SHEETS].find(query_filter)
     sheets = [_serialize(sheet) async for sheet in cursor]
+
+    reviewer_oids: list[ObjectId] = []
+    for sheet in sheets:
+        rb = sheet.get("reviewed_by")
+        if not rb:
+            continue
+        try:
+            reviewer_oids.append(ObjectId(rb))
+        except Exception:
+            pass
+    reviewer_name_by_id: dict[str, str] = {}
+    if reviewer_oids:
+        unique_reviewers = list({str(oid): oid for oid in reviewer_oids}.values())
+        async for doc in db[COLLECTION_USERS].find(
+            {"_id": {"$in": unique_reviewers}},
+            {"name": 1},
+        ):
+            reviewer_name_by_id[str(doc["_id"])] = doc["name"]
+
+    sheet_ids_for_scores: list[str] = [s["_id"] for s in sheets]
+    live_by_sheet: dict[str, LiveSheetScore] = {}
+    if sheet_ids_for_scores:
+        try:
+            live_by_sheet = await compute_live_sheet_scores_batch(sheet_ids_for_scores, db)
+        except Exception:
+            live_by_sheet = {}
     
     # Enhance with employee data and sort
     results = []
@@ -105,19 +133,10 @@ async def get_manager_approvals(
                     action_date = entry.get("timestamp")
                     break
         
-        # Get the reviewer name for history items
         reviewer_name = None
         reviewed_by = sheet.get("reviewed_by")
         if reviewed_by:
-            try:
-                reviewer = await db[COLLECTION_USERS].find_one(
-                    {"_id": ObjectId(reviewed_by)},
-                    {"name": 1},
-                )
-                if reviewer:
-                    reviewer_name = reviewer["name"]
-            except Exception:
-                pass
+            reviewer_name = reviewer_name_by_id.get(str(reviewed_by))
         
         result = {
             "sheet_id": sheet["_id"],
@@ -129,13 +148,17 @@ async def get_manager_approvals(
             "period_label": sheet.get("period_label", ""),
             "goal_count": sheet.get("goal_count", 0),
             "total_weightage": sheet.get("total_weightage", 0),
-            "overall_score": sheet.get("overall_score"),
+            "overall_score": (
+                live_by_sheet[sheet["_id"]].overall_score
+                if sheet["_id"] in live_by_sheet
+                else None
+            ),
             "action_date": action_date,
             "review_comment": sheet.get("review_comment"),
             "reviewer_name": reviewer_name,
         }
         results.append(result)
-    
+
     # Sort results
     if status and "submitted" in status.lower():
         # Pending approvals: most recent submissions first

@@ -17,6 +17,7 @@ from database import COLLECTION_AUDIT_LOG, COLLECTION_GOAL_SHEETS, COLLECTION_GO
 from models.goal import GoalCreate, GoalPublic, GoalUpdate, UoMType
 from models.goal_sheet import ALLOWED_TRANSITIONS, AuditLogEntry, GoalSheetPublic, GoalSheetStatus, GoalSheetStatusUpdate
 from models.user import TokenData, UserRole
+from services.live_scoring import enrich_goal_with_live_score
 
 router = APIRouter(prefix="/api/goals", tags=["Goals"])
 
@@ -274,7 +275,15 @@ async def list_goals(
         raise HTTPException(status_code=403, detail="Access denied.")
 
     cursor = db[COLLECTION_GOALS].find({"goal_sheet_id": sheet_id})
-    return [_serialize(d) async for d in cursor]
+    goals = [_serialize(d) async for d in cursor]
+    
+    # Enrich each goal with live computed scores
+    enriched_goals = []
+    for goal in goals:
+        enriched_goal = await enrich_goal_with_live_score(goal, db)
+        enriched_goals.append(enriched_goal)
+    
+    return enriched_goals
 
 
 @router.post("/sheet/{sheet_id}", response_model=GoalPublic, status_code=status.HTTP_201_CREATED)
@@ -307,6 +316,9 @@ async def add_goal(
     doc["_id"] = str(result.inserted_id)
 
     await _recalculate_sheet_totals(sheet_id, db)
+    
+    # Enrich with live computed scores
+    doc = await enrich_goal_with_live_score(doc, db)
     return doc
 
 
@@ -348,7 +360,9 @@ async def update_goal(
     await _recalculate_sheet_totals(goal["goal_sheet_id"], db)
 
     doc = await db[COLLECTION_GOALS].find_one({"_id": ObjectId(goal_id)})
-    return _serialize(doc)
+    if doc:
+        doc = await enrich_goal_with_live_score(_serialize(doc), db)
+    return doc
 
 
 @router.delete("/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)

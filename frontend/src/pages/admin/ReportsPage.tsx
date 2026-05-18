@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { formatScore } from '@/utils/scoring'
 import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
 import type { GoalSheet, GoalSheetStatus, SharedKpi, SharedKpiPushResponse, User } from '@/types'
 import { THRUST_AREA_LABELS } from '@/types'
@@ -126,8 +127,8 @@ export function AdminReportsPage() {
       dept,
       employees: d.employees,
       avgScore: d.scores.length
-        ? (d.scores.reduce((a, b) => a + b, 0) / d.scores.length).toFixed(1)
-        : null,
+        ? formatScore(d.scores.reduce((a, b) => a + b, 0) / d.scores.length)
+        : '—',
       locked: d.statusCounts.LOCKED,
       submitted: d.statusCounts.SUBMITTED,
     }))

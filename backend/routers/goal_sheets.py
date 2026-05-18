@@ -36,6 +36,7 @@ from models.goal_sheet import (
     GoalSheetStatusUpdate,
 )
 from models.user import TokenData, UserRole
+from services.live_scoring import enrich_sheet_with_live_score, enrich_goal_with_live_score
 
 router = APIRouter(prefix="/api/goalsheets", tags=["Goal Sheets"])
 
@@ -117,7 +118,15 @@ async def list_goal_sheets(
         query["period_id"] = period_id
 
     cursor = db[COLLECTION_GOAL_SHEETS].find(query)
-    return [_serialize(d) async for d in cursor]
+    sheets = [_serialize(d) async for d in cursor]
+    
+    # Enrich each sheet with live computed scores
+    enriched_sheets = []
+    for sheet in sheets:
+        enriched_sheet = await enrich_sheet_with_live_score(sheet, db)
+        enriched_sheets.append(enriched_sheet)
+    
+    return enriched_sheets
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +284,13 @@ async def export_achievement_report(
         department = user.get("department", "")
         period_label = sheet.get("period_label", "")
         sheet_status = sheet.get("status", "")
-        overall_score = sheet.get("overall_score")
+        # Compute live overall score with window-aware gating
+        from services.live_scoring import compute_live_sheet_score
+        try:
+            live_sheet_score = await compute_live_sheet_score(sid, db)
+            overall_score = live_sheet_score.overall_score
+        except Exception:
+            overall_score = None
         overall_score_str = str(overall_score) if overall_score is not None else "n/a"
 
         # ── Sheet-level audit lookups (used by every goal in the sheet) ─────
@@ -315,10 +330,18 @@ async def export_achievement_report(
             gid = str(goal["_id"])
             ci = checkins_by_goal.get(gid)
 
-            # Achievement columns
+            # Achievement columns - compute live with window-aware gating
             actual_val = ci["actual_value"] if ci else "n/a"
-            achievement_pct = goal.get("achievement_pct")
-            goal_score = goal.get("goal_score")
+            
+            # Compute live scores using our live scoring service
+            from services.live_scoring import compute_live_goal_score
+            try:
+                live_score = await compute_live_goal_score(gid, db)
+                achievement_pct = live_score.achievement_pct
+                goal_score = live_score.goal_score
+            except Exception:
+                achievement_pct = None
+                goal_score = None
 
             # Audit columns
             goal_created_date = _iso(goal.get("created_at"))
@@ -585,7 +608,9 @@ async def get_goal_sheet(
     if current.role == UserRole.EMPLOYEE and doc["employee_id"] != current.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    return _serialize(doc)
+    # Enrich with live computed scores
+    doc = await enrich_sheet_with_live_score(_serialize(doc), db)
+    return doc
 
 
 # ---------------------------------------------------------------------------

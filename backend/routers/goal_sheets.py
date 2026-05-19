@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_roles
 from database import (
-    COLLECTION_AUDIT_LOG,
     COLLECTION_CHECKIN_COMMENTS,
     COLLECTION_CHECKINS,
     COLLECTION_GOAL_SHEETS,
@@ -37,6 +36,7 @@ from models.goal_sheet import (
 )
 from models.user import TokenData, UserRole
 from services.live_scoring import enrich_sheet_with_live_score, enrich_goal_with_live_score
+from services.progress_calculator import calculate_progress
 
 router = APIRouter(prefix="/api/goalsheets", tags=["Goal Sheets"])
 
@@ -150,26 +150,16 @@ async def export_achievement_report(
     current: TokenData = Depends(require_roles(UserRole.ADMIN)),
 ):
     """
-    Admin-only.  Streams all goal sheets as a Planned vs Actual CSV.
+    Admin-only.  Streams a two-section Planned vs Actual CSV:
 
-    Achievement columns (docs/REPORTING_REQUIREMENTS.md §Planned vs Actual):
-      employee_id · employee_name · department · period_label · sheet_status ·
-      thrust_area · goal_description · uom_type · unit_of_measure ·
-      planned_target_value · latest_actual_value · achievement_pct ·
-      goal_score · weightage · overall_score
-
-    Audit-trail columns (docs/REPORTING_REQUIREMENTS.md §Audit Log Rules
-    joined with docs/WORKFLOWS.md §Goal Lifecycle):
-      goal_id · goal_created_date · goal_approved_date · checkin_quarter ·
-      manager_checkin_comment · comment_author · comment_timestamp ·
-      last_modified_by · last_modified_date
+      1. GOAL DETAIL — one row per goal (goal-level columns only)
+      2. SHEET SUMMARY — one row per sheet (sheet-level columns only)
 
     Joins:
-      goal_sheets  (embedded audit_log → goal_approved_date)
-      goals        (created_at → goal_created_date)
+      goal_sheets  (embedded audit_log → submission/approval dates, total_weightage)
+      goals        (target, weightage, thrust_area, description)
       checkins     (latest per goal → checkin_quarter, latest_actual_value)
-      checkin_comments  (latest matching sheet + quarter → comment fields)
-      audit_log    (per-field goal changes → last_modified_by/date)
+      checkin_comments  (latest matching sheet + quarter → manager_checkin_comment)
 
     Goals with no check-ins show "n/a" for actuals and "Not Yet" for the
     checkin_quarter column.
@@ -186,14 +176,11 @@ async def export_achievement_report(
         sid = g.get("goal_sheet_id", "")
         goals_by_sheet.setdefault(sid, []).append(g)
 
-    # ── 3. Collect every user id referenced anywhere we need a display name ──
+    # ── 3. Collect employee user ids for display names ───────────────────────
     user_ids: set[str] = set()
     for s in sheets:
         if s.get("employee_id"):
             user_ids.add(s["employee_id"])
-        for entry in s.get("audit_log") or []:
-            if entry.get("actor_id"):
-                user_ids.add(entry["actor_id"])
 
     # ── 4. Latest check-in per goal_id (sort descending by date once) ────────
     checkins_by_goal: dict[str, dict] = {}
@@ -201,8 +188,6 @@ async def export_achievement_report(
         gid = str(ci.get("goal_id", ""))
         if gid and gid not in checkins_by_goal:
             checkins_by_goal[gid] = ci
-            if ci.get("manager_id"):
-                user_ids.add(ci["manager_id"])
 
     # ── 5. Latest check-in comment per (sheet_id, quarter) ───────────────────
     comments_by_sheet_quarter: dict[tuple[str, str], dict] = {}
@@ -210,19 +195,8 @@ async def export_achievement_report(
         key = (c.get("goal_sheet_id", ""), c.get("quarter", ""))
         if key not in comments_by_sheet_quarter:
             comments_by_sheet_quarter[key] = c
-            if c.get("author_id"):
-                user_ids.add(c["author_id"])
 
-    # ── 6. Latest goal-change audit log record per goal_id ──────────────────
-    latest_audit_by_goal: dict[str, dict] = {}
-    async for a in db[COLLECTION_AUDIT_LOG].find({}, sort=[("timestamp", -1)]):
-        gid = a.get("goal_id", "")
-        if gid and gid not in latest_audit_by_goal:
-            latest_audit_by_goal[gid] = a
-            if a.get("actor_id"):
-                user_ids.add(a["actor_id"])
-
-    # ── 7. Resolve user names in a single round-trip ─────────────────────────
+    # ── 6. Resolve user names in a single round-trip ─────────────────────────
     user_map: dict[str, dict] = {}
     if user_ids:
         try:
@@ -235,17 +209,19 @@ async def export_achievement_report(
         ):
             user_map[str(u["_id"])] = u
 
-    def user_name(uid: str | None) -> str:
-        if not uid:
+    def latest_audit_ts(audit_log: list, action: str) -> str:
+        """ISO timestamp of the most recent audit_log entry for action."""
+        matches = [e for e in audit_log if e.get("action") == action]
+        if not matches:
             return ""
-        return user_map.get(uid, {}).get("name") or uid
+        latest = max(matches, key=lambda e: e.get("timestamp") or datetime.min)
+        return _iso(latest.get("timestamp"))
 
-    # ── 8. Build CSV ─────────────────────────────────────────────────────────
+    # ── 7. Build CSV (goal detail rows, blank line, sheet summary rows) ───────
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
 
-    header = [
-        # Achievement columns
+    goal_detail_header = [
         "employee_id",
         "employee_name",
         "department",
@@ -253,26 +229,28 @@ async def export_achievement_report(
         "sheet_status",
         "thrust_area",
         "goal_description",
-        "uom_type",
-        "unit_of_measure",
         "planned_target_value",
         "latest_actual_value",
         "achievement_pct",
         "goal_score",
         "weightage",
-        "overall_score",
-        # Audit-trail columns
-        "goal_id",
-        "goal_created_date",
-        "goal_approved_date",
         "checkin_quarter",
         "manager_checkin_comment",
-        "comment_author",
-        "comment_timestamp",
-        "last_modified_by",
-        "last_modified_date",
     ]
-    writer.writerow(header)
+
+    sheet_summary_header = [
+        "employee_id",
+        "employee_name",
+        "sheet_status",
+        "period_label",
+        "overall_score",
+        "total_weightage",
+        "submission_date",
+        "approval_date",
+    ]
+
+    goal_detail_rows: list[list] = []
+    sheet_summary_rows: list[list] = []
 
     for sheet in sheets:
         sid = str(sheet["_id"])
@@ -284,31 +262,6 @@ async def export_achievement_report(
         department = user.get("department", "")
         period_label = sheet.get("period_label", "")
         sheet_status = sheet.get("status", "")
-        # Use snapshot-aware resolution for overall score
-        from services.quarter_visibility import resolve_all_quarters_visibility
-        from services.quarter_snapshots import read_quarter_snapshot
-        
-        try:
-            # Resolve quarter visibility to determine if we should use snapshot or live scoring
-            visibility_set = await resolve_all_quarters_visibility(db, sid)
-            
-            # For export, use the most recent visible quarter's score as overall score
-            overall_score = None
-            for quarter_vis in reversed(visibility_set.quarters):
-                if quarter_vis.is_visible:
-                    if quarter_vis.use_snapshot:
-                        snapshot = await read_quarter_snapshot(db, sid, quarter_vis.quarter_label)
-                        if snapshot:
-                            overall_score = snapshot.overall_score
-                            break
-                    elif quarter_vis.use_live_scoring:
-                        from services.live_scoring import compute_live_sheet_score
-                        live_sheet_score = await compute_live_sheet_score(sid, db)
-                        overall_score = live_sheet_score.overall_score
-                        break
-        except Exception:
-            overall_score = None
-        overall_score_str = str(overall_score) if overall_score is not None else "n/a"
 
         # ── Sheet-level audit lookups (used by every goal in the sheet) ─────
         sheet_audit_log: list = sheet.get("audit_log") or []
@@ -325,61 +278,68 @@ async def export_achievement_report(
                 (e for e in reversed(sheet_audit_log) if e.get("action") == "APPROVED"),
                 None,
             )
-        goal_approved_date = _iso(locked_entry.get("timestamp")) if locked_entry else ""
+        approval_date = _iso(locked_entry.get("timestamp")) if locked_entry else ""
 
-        # Sheet-level "last modified" candidate = most recent audit_log entry
-        sheet_last_entry = sheet_audit_log[-1] if sheet_audit_log else None
+        submission_date = latest_audit_ts(sheet_audit_log, "SUBMITTED")
 
         goals = goals_by_sheet.get(sid, [])
-        if not goals:
-            # Sheet exists but has no goals — emit one summary row
-            sheet_last_by = user_name(sheet_last_entry.get("actor_id")) if sheet_last_entry else ""
-            sheet_last_date = _iso(sheet_last_entry.get("timestamp")) if sheet_last_entry else ""
-            writer.writerow([
-                emp_id, emp_name, department, period_label, sheet_status,
-                "", "", "", "", "", "n/a", "n/a", "n/a", "", overall_score_str,
-                "", "", goal_approved_date, "Not Yet",
-                "", "", "", sheet_last_by, sheet_last_date,
-            ])
-            continue
 
+        # Pre-compute per-goal scores from latest check-in actuals (VALIDATION_RULES.md)
+        scored_goals: list[dict] = []
+        total_goal_score = 0.0
+        any_scored = False
         for goal in goals:
             gid = str(goal["_id"])
             ci = checkins_by_goal.get(gid)
+            raw_actual = ci.get("actual_value") if ci else None
+            has_actual = raw_actual is not None and raw_actual != ""
 
-            # Achievement columns - compute with snapshot-aware resolution
-            actual_val = ci["actual_value"] if ci else "n/a"
-            
-            # Use snapshot-aware scoring: check if this goal's quarter is frozen
-            achievement_pct = None
-            goal_score = None
-            
-            if ci:
-                quarter_label = ci.get("period_label")
-                if quarter_label:
-                    # Check if this quarter has a snapshot
-                    try:
-                        snapshot = await read_quarter_snapshot(db, sid, quarter_label)
-                        if snapshot:
-                            # Use frozen snapshot values for this goal
-                            for frozen_goal in snapshot.goals:
-                                if frozen_goal.goal_id == gid:
-                                    achievement_pct = frozen_goal.achievement_pct
-                                    goal_score = frozen_goal.goal_score
-                                    actual_val = frozen_goal.actual_value if frozen_goal.actual_value is not None else "n/a"
-                                    break
-                        else:
-                            # No snapshot, use live scoring
-                            from services.live_scoring import compute_live_goal_score
-                            live_score = await compute_live_goal_score(gid, db, quarter_filter=quarter_label)
-                            achievement_pct = live_score.achievement_pct
-                            goal_score = live_score.goal_score
-                    except Exception:
-                        achievement_pct = None
-                        goal_score = None
+            if has_actual:
+                progress = calculate_progress(
+                    goal.get("uom_type", ""),
+                    goal.get("target_value"),
+                    raw_actual,
+                    goal.get("weightage", 0),
+                )
+                achievement_pct = progress.achievement_pct
+                goal_score = progress.goal_score
+                actual_val = raw_actual
+            else:
+                achievement_pct = None
+                goal_score = None
+                actual_val = "n/a"
 
-            # Audit columns
-            goal_created_date = _iso(goal.get("created_at"))
+            if goal_score is not None:
+                total_goal_score += goal_score
+                any_scored = True
+
+            scored_goals.append({
+                "goal": goal,
+                "ci": ci,
+                "actual_val": actual_val,
+                "achievement_pct": achievement_pct,
+                "goal_score": goal_score,
+            })
+
+        overall_score_str = str(round(total_goal_score, 2)) if any_scored else "n/a"
+
+        sheet_summary_rows.append([
+            emp_id,
+            emp_name,
+            sheet_status,
+            period_label,
+            overall_score_str,
+            sheet.get("total_weightage", ""),
+            submission_date,
+            approval_date,
+        ])
+
+        for row in scored_goals:
+            goal = row["goal"]
+            ci = row["ci"]
+            actual_val = row["actual_val"]
+            achievement_pct = row["achievement_pct"]
+            goal_score = row["goal_score"]
 
             checkin_quarter = ci.get("period_label") if ci else "Not Yet"
 
@@ -399,37 +359,8 @@ async def export_achievement_report(
                     None,
                 )
             manager_comment = (comment_doc.get("comment") if comment_doc else "") or ""
-            comment_author = ""
-            if comment_doc:
-                comment_author = (
-                    comment_doc.get("author_name")
-                    or user_name(comment_doc.get("author_id"))
-                )
-            comment_timestamp = _iso(comment_doc.get("created_at")) if comment_doc else ""
 
-            # last_modified — pick whichever is newer: the per-goal audit_log
-            # entry or the sheet-level audit_log entry.
-            goal_audit = latest_audit_by_goal.get(gid)
-            candidates = []
-            if goal_audit and goal_audit.get("timestamp"):
-                candidates.append((
-                    goal_audit["timestamp"],
-                    user_name(goal_audit.get("actor_id")),
-                ))
-            if sheet_last_entry and sheet_last_entry.get("timestamp"):
-                candidates.append((
-                    sheet_last_entry["timestamp"],
-                    user_name(sheet_last_entry.get("actor_id")),
-                ))
-            if candidates:
-                ts, actor_name = max(candidates, key=lambda x: x[0])
-                last_modified_by = actor_name
-                last_modified_date = _iso(ts)
-            else:
-                last_modified_by = ""
-                last_modified_date = ""
-
-            writer.writerow([
+            goal_detail_rows.append([
                 emp_id,
                 emp_name,
                 department,
@@ -437,24 +368,30 @@ async def export_achievement_report(
                 sheet_status,
                 goal.get("thrust_area", ""),
                 goal.get("description", ""),
-                goal.get("uom_type", ""),
-                goal.get("unit_of_measure", ""),
                 goal.get("target_value", ""),
                 actual_val,
                 str(achievement_pct) if achievement_pct is not None else "n/a",
                 str(goal_score) if goal_score is not None else "n/a",
                 goal.get("weightage", ""),
-                overall_score_str,
-                gid,
-                goal_created_date,
-                goal_approved_date,
                 checkin_quarter,
                 manager_comment,
-                comment_author,
-                comment_timestamp,
-                last_modified_by,
-                last_modified_date,
             ])
+
+        if not scored_goals:
+            goal_detail_rows.append([
+                emp_id,
+                emp_name,
+                department,
+                period_label,
+                sheet_status,
+                "", "", "", "n/a", "n/a", "n/a", "", "", "",
+            ])
+
+    writer.writerow(goal_detail_header)
+    writer.writerows(goal_detail_rows)
+    writer.writerow([])
+    writer.writerow(sheet_summary_header)
+    writer.writerows(sheet_summary_rows)
 
     output.seek(0)
     filename = f"achievement_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"

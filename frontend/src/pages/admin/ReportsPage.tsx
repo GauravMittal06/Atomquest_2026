@@ -154,8 +154,7 @@ export function AdminReportsPage() {
             <div>
               <p className="text-sm font-semibold text-slate-800">Achievement Report CSV</p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                Exports all goal sheets with planned targets, actual achievements, scores,
-                check-in history, and audit trail columns.
+                Goal detail rows (one per goal), then sheet summary rows (one per sheet).
               </p>
             </div>
             <div className="flex flex-col items-end gap-1.5">
@@ -179,17 +178,17 @@ export function AdminReportsPage() {
           </div>
 
           {/* Field listing */}
-          <div className="mt-4 rounded-md bg-slate-50 border border-slate-100 px-4 py-3">
+          <div className="mt-4 rounded-md bg-slate-50 border border-slate-100 px-4 py-3 space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-              Report columns
+              Goal detail (one row per goal)
             </p>
             <div className="flex flex-wrap gap-1.5">
               {[
                 'employee_id', 'employee_name', 'department', 'period_label', 'sheet_status',
-                'thrust_area', 'goal_description', 'planned_target_value', 'latest_actual_value',
-                'achievement_pct', 'goal_score', 'weightage', 'overall_score',
-                'goal_approved_date', 'checkin_quarter', 'manager_checkin_comment',
-                'last_modified_by', 'last_modified_date',
+                'thrust_area', 'goal_description',
+                'planned_target_value', 'latest_actual_value',
+                'achievement_pct', 'goal_score', 'weightage',
+                'checkin_quarter', 'manager_checkin_comment',
               ].map((col) => (
                 <span
                   key={col}
@@ -198,6 +197,25 @@ export function AdminReportsPage() {
                   {col}
                 </span>
               ))}
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                Sheet summary (one row per sheet)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'employee_id', 'employee_name', 'sheet_status', 'period_label',
+                  'overall_score', 'total_weightage',
+                  'submission_date', 'approval_date',
+                ].map((col) => (
+                  <span
+                    key={col}
+                    className="rounded bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-600"
+                  >
+                    {col}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </div>

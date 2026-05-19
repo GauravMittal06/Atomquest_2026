@@ -8,6 +8,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   ShieldCheck,
+  TrendingUp,
   Users,
 } from 'lucide-react'
 
@@ -29,6 +30,7 @@ import { AdminGoalSheetsPage } from '@/pages/admin/GoalSheetsPage'
 import { AdminReportsPage } from '@/pages/admin/ReportsPage'
 import { AdminUsersPage } from '@/pages/admin/UsersPage'
 import { AdminEscalationsPage } from '@/pages/admin/EscalationsPage'
+import ManagerEffectivenessPage from '@/pages/admin/ManagerEffectivenessPage'
 
 const employeeNav = [
   { label: 'Dashboard', to: '/employee/dashboard', icon: <LayoutDashboard size={16} /> },
@@ -45,6 +47,7 @@ const managerNav = [
 const adminNav = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: <LayoutDashboard size={16} /> },
   { label: 'Completion', to: '/admin/completion', icon: <Activity size={16} /> },
+  { label: 'Manager Effectiveness', to: '/admin/manager-effectiveness', icon: <TrendingUp size={18} /> },
   { label: 'All Goal Sheets', to: '/admin/goalsheets', icon: <ShieldCheck size={16} /> },
   { label: 'Reports', to: '/admin/reports', icon: <BarChart2 size={16} /> },
   { label: 'Users', to: '/admin/users', icon: <Users size={16} /> },
@@ -87,6 +90,7 @@ export function AppRouter() {
         <Route element={<AppShell role="ADMIN" navItems={adminNav} />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/completion" element={<AdminCompletionDashboard />} />
+          <Route path="/admin/manager-effectiveness" element={<ManagerEffectivenessPage />} />
           <Route path="/admin/goalsheets" element={<AdminGoalSheetsPage />} />
           <Route path="/admin/reports" element={<AdminReportsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />

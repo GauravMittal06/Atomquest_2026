@@ -6,15 +6,17 @@ GET /api/admin/all-goal-sheets — hierarchical goal-sheet view grouped by emplo
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Query
 
-from auth import require_roles
+from collections import defaultdict
+
+from auth import require_admin, require_roles
 from database import (
+    COLLECTION_CHECKINS,
     COLLECTION_GOAL_SHEETS,
     COLLECTION_GOALS,
     COLLECTION_USERS,
@@ -251,3 +253,67 @@ async def get_all_goal_sheets_grouped(
         "filtered_sheet_count": len(sheet_payloads),
         "status_counts": status_counts,
     }
+
+
+def _manager_completion_rate(submitted: int, team_size: int) -> float:
+    if team_size <= 0:
+        return 0.0
+    return round((submitted / team_size) * 100.0, 1)
+
+
+@router.get("/manager-effectiveness")
+async def get_manager_effectiveness(
+    _: TokenData = Depends(require_admin),
+) -> list[dict[str, Any]]:
+    """
+    Per-manager check-in completion rates for direct-report employees.
+
+    An employee counts as having submitted when any of their goal sheets has
+    at least one document in the checkins collection (any quarter).
+    """
+    db = get_database()
+
+    managers = [
+        u async for u in db[COLLECTION_USERS].find({"role": UserRole.MANAGER.value})
+    ]
+    employees = [
+        u async for u in db[COLLECTION_USERS].find({"role": UserRole.EMPLOYEE.value})
+    ]
+
+    team_by_mgr: dict[str, list[str]] = defaultdict(list)
+    for emp in employees:
+        mgr_id = emp.get("manager_id")
+        if mgr_id:
+            team_by_mgr[str(mgr_id)].append(str(emp["_id"]))
+
+    sheets_by_emp: dict[str, list[str]] = defaultdict(list)
+    async for sheet in db[COLLECTION_GOAL_SHEETS].find({}, {"employee_id": 1}):
+        emp_id = str(sheet.get("employee_id", ""))
+        if emp_id:
+            sheets_by_emp[emp_id].append(str(sheet["_id"]))
+
+    sheets_with_checkin: set[str] = set()
+    async for ci in db[COLLECTION_CHECKINS].find({}, {"goal_sheet_id": 1}):
+        sid = ci.get("goal_sheet_id")
+        if sid:
+            sheets_with_checkin.add(str(sid))
+
+    def _employee_has_checkin(emp_id: str) -> bool:
+        return any(sid in sheets_with_checkin for sid in sheets_by_emp.get(emp_id, []))
+
+    results: list[dict[str, Any]] = []
+    for mgr in managers:
+        mgr_id = str(mgr["_id"])
+        team_ids = team_by_mgr.get(mgr_id, [])
+        team_size = len(team_ids)
+        checkins_submitted = sum(1 for eid in team_ids if _employee_has_checkin(eid))
+        results.append({
+            "manager_id": mgr_id,
+            "manager_name": mgr.get("name", ""),
+            "team_size": team_size,
+            "checkins_submitted": checkins_submitted,
+            "completion_rate": _manager_completion_rate(checkins_submitted, team_size),
+        })
+
+    results.sort(key=lambda r: (r.get("manager_name") or "").lower())
+    return results

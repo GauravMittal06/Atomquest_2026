@@ -67,3 +67,7 @@ def require_roles(*roles: UserRole):
             )
         return token_data
     return _check
+
+
+# Admin-only guard (docs/ROLE_PERMISSIONS.md §Admin)
+require_admin = require_roles(UserRole.ADMIN)

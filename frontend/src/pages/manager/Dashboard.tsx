@@ -12,7 +12,7 @@
  *   2. Compact stat strip: 4 key numbers
  *   3. Requires Attention: action-required rows surfaced first
  *   4. Full team table: all members sorted by urgency
- *   5. Push Shared KPI: collapsed by default — secondary workflow
+ *   5. Push Departmental KPI: collapsed by default — secondary workflow
  *
  * All existing logic preserved: review navigation, admin override detection,
  * status badges, PushSharedKpiForm functionality.
@@ -23,8 +23,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Clock,
   Loader2,
   RotateCcw,
@@ -89,8 +87,6 @@ export function ManagerDashboard() {
   const [rows, setRows] = useState<TeamRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showKpiForm, setShowKpiForm] = useState(false)
-
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -169,7 +165,7 @@ export function ManagerDashboard() {
       {/* ── 1. Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="breadcrumb">Manager · Dashboard</p>
+          {/* <p className="breadcrumb">Dashboard</p> */}
           <h1 className="page-title">Team Overview</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             {user?.name} · FY 2025-26 · {teamSize} direct report{teamSize !== 1 ? 's' : ''}
@@ -407,28 +403,8 @@ export function ManagerDashboard() {
         </div>
       </div>
 
-      {/* ── 5. Push Shared KPI — collapsible secondary action ─────────── */}
-      <div className="card overflow-hidden p-0">
-        <button
-          onClick={() => setShowKpiForm((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
-        >
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Push Shared KPI</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Assign a shared KPI goal to selected team members
-            </p>
-          </div>
-          {showKpiForm
-            ? <ChevronUp size={16} className="text-slate-400 flex-shrink-0" />
-            : <ChevronDown size={16} className="text-slate-400 flex-shrink-0" />}
-        </button>
-        {showKpiForm && (
-          <div className="border-t border-slate-100 p-5">
-            <PushSharedKpiForm teamMembers={rows.map((r) => r.user)} />
-          </div>
-        )}
-      </div>
+      {/* ── 5. Push Departmental KPI — collapsible secondary action ─── */}
+      <PushSharedKpiForm teamMembers={rows.map((r) => r.user)} />
 
     </div>
   )

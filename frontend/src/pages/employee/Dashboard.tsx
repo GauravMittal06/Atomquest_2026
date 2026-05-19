@@ -113,7 +113,7 @@ export function EmployeeDashboard() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="breadcrumb">Employee · Dashboard</p>
+          {/* <p className="breadcrumb">Employee · Dashboard</p> */}
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="page-title">{user?.name ?? 'My Dashboard'}</h1>
             {checkInWindowOpen && cycleStatus?.active_quarter && (

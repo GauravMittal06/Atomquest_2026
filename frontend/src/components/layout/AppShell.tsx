@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import { useAuth } from '@/contexts/AuthContext'
+import { getRoleDisplayLabel } from '@/lib/roleDisplay'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
 import { MockDatePicker } from '@/components/admin/MockDatePicker'
@@ -36,8 +37,9 @@ const ROLE_LABELS: Record<UserRole, string> = {
 }
 
 export function AppShell({ role, navItems }: AppShellProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, role: authRole } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const headerRoleLabel = getRoleDisplayLabel(authRole ?? role)
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-50">
@@ -130,7 +132,7 @@ export function AppShell({ role, navItems }: AppShellProps) {
           </button>
           <span className="flex items-center gap-2 text-sm text-slate-500">
             <LayoutDashboard size={15} />
-            Dashboard
+            {headerRoleLabel}
           </span>
           <div className="ml-auto flex items-center gap-4">
             <MockDatePicker />

@@ -58,9 +58,41 @@ interface RowEdit {
   remarks: string
 }
 
-interface RowSavedFlag {
-  ok: boolean
-  message?: string
+interface SaveSnapshot {
+  actualValue: string
+  selfRating: string
+  remarks: string
+}
+
+interface SaveState {
+  isSaved: boolean
+  isSaving: boolean
+  lastSavedData: SaveSnapshot | null
+  error?: string
+}
+
+function rowEditFromCheckin(existing: CheckIn | undefined): RowEdit {
+  return {
+    actualValue:
+      existing?.actual_value !== undefined && existing?.actual_value !== null
+        ? String(existing.actual_value)
+        : '',
+    selfRating:
+      existing?.self_rating !== undefined && existing?.self_rating !== null
+        ? String(existing.self_rating)
+        : '',
+    remarks: existing?.remarks ?? '',
+  }
+}
+
+function hasUnsavedChanges(edit: RowEdit, state: SaveState | undefined): boolean {
+  if (!state?.lastSavedData) return true
+  const snap = state.lastSavedData
+  return (
+    edit.actualValue !== snap.actualValue ||
+    edit.selfRating !== snap.selfRating ||
+    edit.remarks !== snap.remarks
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -85,8 +117,9 @@ export function CheckInsPage() {
 
   // Per-goal editable state
   const [edits, setEdits] = useState<Record<string, RowEdit>>({})
-  const [savingGoal, setSavingGoal] = useState<string | null>(null)
-  const [rowFlags, setRowFlags] = useState<Record<string, RowSavedFlag>>({})
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({})
+  /** Bumped after initial load so we re-seed edits without reacting to per-row saves. */
+  const [seedKey, setSeedKey] = useState(0)
 
   // ---------------------------------------------------------------------------
   // Data loading
@@ -119,6 +152,7 @@ export function CheckInsPage() {
       setGoals(goalsRes.data)
       setCheckins(checkinsRes.data)
       setComments(commentsRes.data)
+      setSeedKey((k) => k + 1)
     } catch {
       setPageError('Failed to load check-in data. Please try again.')
     } finally {
@@ -137,28 +171,31 @@ export function CheckInsPage() {
     if (active) setSelectedQuarter(active)
   }, [cycle])
 
-  // Seed edits for the selected quarter whenever inputs change
+  // Seed edits only on load or quarter change — not after a single-row save.
   useEffect(() => {
-    const next: Record<string, RowEdit> = {}
+    if (loading || goals.length === 0) return
+    const nextEdits: Record<string, RowEdit> = {}
+    const nextSaveStates: Record<string, SaveState> = {}
     for (const g of goals) {
       const existing = checkins.find(
         (c) => c.goal_id === g._id && c.period_label === selectedQuarter,
       )
-      next[g._id] = {
-        actualValue:
-          existing?.actual_value !== undefined && existing?.actual_value !== null
-            ? String(existing.actual_value)
-            : '',
-        selfRating:
-          existing?.self_rating !== undefined && existing?.self_rating !== null
-            ? String(existing.self_rating)
-            : '',
-        remarks: existing?.remarks ?? '',
+      const row = rowEditFromCheckin(existing)
+      nextEdits[g._id] = row
+      const persisted =
+        existing?.actual_value !== undefined && existing?.actual_value !== null
+      nextSaveStates[g._id] = {
+        isSaved: persisted,
+        isSaving: false,
+        lastSavedData: persisted ? { ...row } : null,
       }
     }
-    setEdits(next)
-    setRowFlags({})
-  }, [goals, checkins, selectedQuarter])
+    setEdits(nextEdits)
+    setSaveStates(nextSaveStates)
+    // goals/checkins intentionally omitted — re-seeding on every checkins update
+    // was resetting unsaved rows after a single-row save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedQuarter, seedKey, loading])
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -183,7 +220,15 @@ export function CheckInsPage() {
       ...prev,
       [goalId]: { ...prev[goalId], [field]: value },
     }))
-    setRowFlags((prev) => ({ ...prev, [goalId]: { ok: false } }))
+    setSaveStates((prev) => ({
+      ...prev,
+      [goalId]: {
+        isSaved: false,
+        isSaving: prev[goalId]?.isSaving ?? false,
+        lastSavedData: prev[goalId]?.lastSavedData ?? null,
+        error: undefined,
+      },
+    }))
   }
 
   async function handleSaveRow(goal: Goal) {
@@ -191,9 +236,14 @@ export function CheckInsPage() {
     const edit = edits[goal._id]
     if (!edit) return
     if (edit.actualValue.trim() === '') {
-      setRowFlags((prev) => ({
+      setSaveStates((prev) => ({
         ...prev,
-        [goal._id]: { ok: false, message: 'Actual value is required.' },
+        [goal._id]: {
+          isSaved: false,
+          isSaving: false,
+          lastSavedData: prev[goal._id]?.lastSavedData ?? null,
+          error: 'Actual value is required.',
+        },
       }))
       return
     }
@@ -211,8 +261,15 @@ export function CheckInsPage() {
 
     const selfRating = edit.selfRating === '' ? undefined : Number(edit.selfRating)
 
-    setSavingGoal(goal._id)
-    setRowFlags((prev) => ({ ...prev, [goal._id]: { ok: false } }))
+    setSaveStates((prev) => ({
+      ...prev,
+      [goal._id]: {
+        isSaved: false,
+        isSaving: true,
+        lastSavedData: prev[goal._id]?.lastSavedData ?? null,
+        error: undefined,
+      },
+    }))
 
     try {
       let updated: CheckIn
@@ -238,27 +295,77 @@ export function CheckInsPage() {
         return [...others, updated]
       })
 
-      // Re-pull goal achievement / sheet score so the live numbers reflect
-      // what the backend now thinks.
-      const [goalsRes, sheetRes] = await Promise.all([
-        api.get<Goal[]>(`/goals/sheet/${sheet._id}`),
-        api.get<GoalSheet>(`/goalsheets/${sheet._id}`),
-      ])
-      setGoals(goalsRes.data)
-      setSheet(sheetRes.data)
+      const snapshot: SaveSnapshot = {
+        actualValue: edit.actualValue,
+        selfRating: edit.selfRating,
+        remarks: edit.remarks,
+      }
+      const progress = calculateProgress(
+        goal.uom_type,
+        goal.target_value,
+        edit.actualValue,
+        goal.weightage,
+      )
+      setGoals((prev) => {
+        const next = prev.map((g) =>
+          g._id === goal._id
+            ? {
+                ...g,
+                latest_actual_value: actualPayload,
+                achievement_pct: progress.achievementPct ?? undefined,
+                goal_score: progress.goalScore ?? undefined,
+              }
+            : g,
+        )
+        let overall = 0
+        let hasScore = false
+        for (const g of next) {
+          const rowEdit =
+            g._id === goal._id
+              ? edit
+              : edits[g._id] ??
+                rowEditFromCheckin(
+                  checkins.find(
+                    (c) => c.goal_id === g._id && c.period_label === selectedQuarter,
+                  ),
+                )
+          if (!rowEdit.actualValue.trim()) continue
+          const p = calculateProgress(
+            g.uom_type,
+            g.target_value,
+            rowEdit.actualValue,
+            g.weightage,
+          )
+          if (p.goalScore != null) {
+            overall += p.goalScore
+            hasScore = true
+          }
+        }
+        if (hasScore) {
+          setSheet((s) => (s ? { ...s, overall_score: overall } : s))
+        }
+        return next
+      })
 
-      setRowFlags((prev) => ({ ...prev, [goal._id]: { ok: true } }))
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setRowFlags((prev) => ({
+      setSaveStates((prev) => ({
         ...prev,
         [goal._id]: {
-          ok: false,
-          message: axiosErr?.response?.data?.detail ?? 'Save failed.',
+          isSaved: true,
+          isSaving: false,
+          lastSavedData: snapshot,
         },
       }))
-    } finally {
-      setSavingGoal(null)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } }
+      setSaveStates((prev) => ({
+        ...prev,
+        [goal._id]: {
+          isSaved: false,
+          isSaving: false,
+          lastSavedData: prev[goal._id]?.lastSavedData ?? null,
+          error: axiosErr?.response?.data?.detail ?? 'Save failed.',
+        },
+      }))
     }
   }
 
@@ -303,7 +410,7 @@ export function CheckInsPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="breadcrumb">Employee · Check-ins</p>
+          {/* <p className="breadcrumb">Employee · Check-ins</p> */}
           <h1 className="page-title">Quarterly Check-Ins</h1>
           <p className="mt-1 text-sm text-slate-500">
             {sheet.period_label} · {sheet.goal_count} goal
@@ -394,12 +501,15 @@ export function CheckInsPage() {
                   selfRating: '',
                   remarks: '',
                 }
-                const flag = rowFlags[goal._id]
-                const isSavingRow = savingGoal === goal._id
+                const saveState = saveStates[goal._id]
+                const dirty = hasUnsavedChanges(edit, saveState)
+                const isSavingRow = saveState?.isSaving === true
+                const showSaved =
+                  saveState?.isSaved === true && !dirty && !isSavingRow
                 const livePreview = calculateProgress(
                   goal.uom_type,
                   goal.target_value,
-                  edit.actualValue || goal.latest_actual_value,
+                  edit.actualValue,
                   goal.weightage,
                 )
                 // Locate the saved check-in so we can surface the manager remark
@@ -484,10 +594,13 @@ export function CheckInsPage() {
                       {inputsEditable && (
                         <td className="td">
                           {isSavingRow ? (
-                            <Loader2 className="mx-auto h-4 w-4 animate-spin text-blue-400" />
-                          ) : flag?.ok ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Saving…
+                            </span>
+                          ) : showSaved ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
-                              <CheckCircle2 size={12} /> saved
+                              <CheckCircle2 size={12} /> Saved
                             </span>
                           ) : (
                             <button
@@ -499,9 +612,9 @@ export function CheckInsPage() {
                               Save
                             </button>
                           )}
-                          {flag?.message && (
+                          {saveState?.error && (
                             <p className="mt-1 text-[11px] text-red-500">
-                              {flag.message}
+                              {saveState.error}
                             </p>
                           )}
                         </td>

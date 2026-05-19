@@ -150,7 +150,7 @@ export function AdminUsersPage() {
       {/* ── Page header ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="breadcrumb">Admin · Users</p>
+          {/* <p className="breadcrumb">Admin · Users</p> */}
           <h1 className="page-title">User Management</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Organization overview · {users.length} total users

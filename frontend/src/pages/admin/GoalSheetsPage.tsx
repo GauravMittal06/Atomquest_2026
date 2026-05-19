@@ -204,7 +204,7 @@ export function AdminGoalSheetsPage() {
 
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="breadcrumb">Admin · Goal Sheets</p>
+          {/* <p className="breadcrumb">Admin · Goal Sheets</p> */}
           <h1 className="page-title">All Goal Sheets</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Governance · Unlock workflows · Audit trail

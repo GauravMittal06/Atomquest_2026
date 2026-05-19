@@ -178,7 +178,7 @@ export function GoalsPage() {
     return (
       <div className="space-y-6">
         <div>
-          <p className="breadcrumb">Employee · Goals</p>
+          {/* <p className="breadcrumb">Employee · Goals</p> */}
           <h1 className="page-title">{isEditing ? 'Edit Goal Sheet' : 'Create Goal Sheet'}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {isEditing
@@ -204,7 +204,7 @@ export function GoalsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="breadcrumb">Employee · Goals</p>
+          {/* <p className="breadcrumb">Employee · Goals</p> */}
           <h1 className="page-title">My Goal Sheet</h1>
           <p className="mt-1 text-sm text-slate-500">
             {sheet.period_label} · {sheet.goal_count} goal{sheet.goal_count !== 1 ? 's' : ''} ·{' '}

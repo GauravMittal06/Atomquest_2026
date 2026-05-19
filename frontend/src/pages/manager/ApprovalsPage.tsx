@@ -142,7 +142,7 @@ export function ApprovalsPage() {
       
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div>
-        <p className="breadcrumb">Manager · Approvals</p>
+        {/* <p className="breadcrumb">Approvals</p> */}
         <h1 className="page-title">Goal Sheet Approvals</h1>
         <p className="text-xs text-slate-400 mt-0.5">
           Review submitted goal sheets and track approval history

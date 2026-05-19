@@ -363,7 +363,7 @@ export function ReviewPage() {
             <ArrowLeft size={14} />
             Back to Team
           </button>
-          <p className="breadcrumb">Manager · Review</p>
+          <p className="breadcrumb">Review</p>
           <h1 className="page-title">Review Goal Sheet</h1>
           <p className="mt-1 text-sm text-slate-500">
             {employeeName}

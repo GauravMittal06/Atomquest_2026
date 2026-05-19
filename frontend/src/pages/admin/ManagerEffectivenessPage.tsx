@@ -165,7 +165,7 @@ export function AdminManagerEffectivenessPage() {
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="breadcrumb">ADMIN · MANAGER EFFECTIVENESS</p>
+          {/* <p className="breadcrumb">ADMIN · MANAGER EFFECTIVENESS</p> */}
           <h1 className="page-title">Manager Effectiveness</h1>
           <p className="text-sm text-slate-500 mt-1">
             Check-in completion rates across all L1 managers

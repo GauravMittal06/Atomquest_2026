@@ -12,9 +12,9 @@
  *   - Requires Attention  — bottlenecks needing action
  *   - Recent Activity     — lightweight event feed from audit logs
  *   - Status Strip        — compact goal-sheet status breakdown
+ *   - Shared KPIs         — push departmental KPI to employees
  *
- * Everything else (unlock workflow, history, CSV export, dept summary,
- * shared KPIs) lives in dedicated pages:
+ * Everything else (unlock workflow, history, CSV export, dept summary) lives in dedicated pages:
  *   /admin/goalsheets  → governance & unlock
  *   /admin/reports     → analytics, export, history
  *   /admin/completion  → submission & check-in health
@@ -29,11 +29,13 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  Share2,
   ShieldAlert,
   Users,
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { GoalSheet, GoalSheetStatus, User } from '@/types'
 
@@ -265,7 +267,7 @@ export function AdminDashboard() {
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="breadcrumb">Admin · Operations</p>
+          {/* <p className="breadcrumb"> Operations</p> */}
           <h1 className="page-title">Operations</h1>
           <p className="text-xs text-slate-400 mt-0.5">FY 2025-26 · All departments</p>
         </div>
@@ -431,6 +433,12 @@ export function AdminDashboard() {
         </div>
       </div>
 
+      {/* ── Push Departmental KPI ───────────────────────────────────────── */}
+      <div>
+        <SectionLabel icon={<Share2 size={13} />}>Shared KPIs</SectionLabel>
+        <PushSharedKpiForm teamMembers={allUsers} />
+      </div>
+
     </div>
   )
 }
@@ -439,11 +447,20 @@ export function AdminDashboard() {
 // Local presentational sub-components
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({
+  icon,
+  children,
+}: {
+  icon?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-      {children}
-    </p>
+    <div className="flex items-center gap-1.5 mb-2">
+      {icon && <span className="text-slate-400">{icon}</span>}
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+        {children}
+      </p>
+    </div>
   )
 }
 

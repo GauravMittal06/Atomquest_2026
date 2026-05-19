@@ -5,7 +5,6 @@
  *   - Planned vs Actual Achievement CSV export
  *   - Department summary
  *   - Pushed Shared KPIs history
- *   - Push new Shared KPI
  *
  * Data sources:
  *   GET /api/users/team                      — employee/manager info
@@ -22,13 +21,11 @@ import {
   Building2,
   Download,
   Loader2,
-  Share2,
 } from 'lucide-react'
 
 import api from '@/lib/api'
 import { formatScore } from '@/utils/scoring'
-import { PushSharedKpiForm } from '@/components/shared-goals/PushSharedKpiForm'
-import type { GoalSheet, GoalSheetStatus, SharedKpi, SharedKpiPushResponse, User } from '@/types'
+import type { GoalSheet, GoalSheetStatus, SharedKpi, User } from '@/types'
 import { THRUST_AREA_LABELS } from '@/types'
 
 // ---------------------------------------------------------------------------
@@ -65,11 +62,6 @@ export function AdminReportsPage() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
-
-  function handlePushSuccess(res: SharedKpiPushResponse) {
-    void res
-    api.get<SharedKpi[]>('/shared-kpis/').then((r) => setSharedKpis(r.data)).catch(() => {})
-  }
 
   async function handleExport() {
     setExporting(true)
@@ -147,10 +139,10 @@ export function AdminReportsPage() {
 
       {/* ── Header ── */}
       <div>
-        <p className="breadcrumb">Admin · Reports</p>
+        {/* <p className="breadcrumb">Admin · Reports</p> */}
         <h1 className="page-title">Reports & Analytics</h1>
         <p className="text-xs text-slate-400 mt-0.5">
-          Export, department analysis, and shared KPI management
+          Export, department analysis, and shared KPI history
         </p>
       </div>
 
@@ -258,16 +250,7 @@ export function AdminReportsPage() {
         </div>
       </section>
 
-      {/* ── Section 3: Push New Shared KPI ── */}
-      <section>
-        <SectionLabel icon={<Share2 size={13} />}>Shared KPIs</SectionLabel>
-        <PushSharedKpiForm
-          teamMembers={allUsers}
-          onSuccess={handlePushSuccess}
-        />
-      </section>
-
-      {/* ── Section 4: Pushed Shared KPI history ── */}
+      {/* ── Section 3: Pushed Shared KPI history ── */}
       {sharedKpis.length > 0 && (
         <section>
           <SectionLabel icon={<BarChart2 size={13} />}>Pushed KPI History</SectionLabel>

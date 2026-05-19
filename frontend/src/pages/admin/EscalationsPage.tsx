@@ -242,7 +242,7 @@ export function AdminEscalationsPage() {
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="breadcrumb">Admin · Escalations</p>
+          {/* <p className="breadcrumb">Admin · Escalations</p> */}
           <h1 className="page-title">Escalations</h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Automatic governance alerts · {escalations.length} shown

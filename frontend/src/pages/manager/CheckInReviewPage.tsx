@@ -244,7 +244,7 @@ export function CheckInReviewPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="breadcrumb">Manager · Check-ins</p>
+          {/* <p className="breadcrumb">Check-ins</p> */}
           <h1 className="page-title">Team Check-In Review</h1>
           <p className="mt-1 text-sm text-slate-500">
             Planned vs. Actual achievements per quarter · structured review notes

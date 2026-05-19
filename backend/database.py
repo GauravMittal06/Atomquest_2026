@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from config import settings
@@ -7,7 +8,12 @@ _client: AsyncIOMotorClient | None = None
 
 async def connect_db() -> None:
     global _client
-    _client = AsyncIOMotorClient(settings.mongodb_url)
+    _client = AsyncIOMotorClient(
+        settings.mongodb_url,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        retryWrites=True,
+    )
     # Trigger an immediate connection check
     await _client.admin.command("ping")
 
@@ -21,7 +27,7 @@ async def close_db() -> None:
 
 def get_database() -> AsyncIOMotorDatabase:
     if _client is None:
-        raise RuntimeError("Database client is not initialised. Call connect_db() first.")
+        raise HTTPException(status_code=503, detail="Database unavailable")
     return _client[settings.database_name]
 
 
@@ -45,6 +51,9 @@ async def ensure_indexes() -> None:
     employee_id (goal_sheets).
     """
     db = get_database()
+    await db[COLLECTION_USERS].create_index("email", unique=True)
+    await db[COLLECTION_USERS].create_index("employee_id", unique=True)
+    await db[COLLECTION_USERS].create_index("manager_id")
     await db[COLLECTION_GOALS].create_index("goal_sheet_id")
     await db[COLLECTION_CHECKINS].create_index("period_label")
     await db[COLLECTION_GOAL_SHEETS].create_index("employee_id")

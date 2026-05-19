@@ -4,10 +4,10 @@ AtomQuest Goal Tracking Portal — FastAPI entry point.
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import close_db, connect_db, ensure_indexes
+from database import close_db, connect_db, ensure_indexes, get_database
 from routers import (
     admin_router,
     admin_dashboard_router,
@@ -28,8 +28,13 @@ from routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_db()
-    await ensure_indexes()
+    app.state.db_ready = False
+    try:
+        await connect_db()
+        await ensure_indexes()
+        app.state.db_ready = True
+    except Exception:
+        app.state.db_ready = False
     yield
     await close_db()
 
@@ -75,4 +80,11 @@ app.include_router(manager_router)
 
 @app.get("/api/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "service": "AtomQuest API"}
+    if not getattr(app.state, "db_ready", False):
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        db = get_database()
+        await db.command("ping")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"status": "ok", "service": "AtomQuest API", "db": "connected"}

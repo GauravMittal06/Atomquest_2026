@@ -267,14 +267,6 @@ Windows are centrally defined in `appraisal_periods` collection:
 
 ---
 
-## Known Limitations
-
-- Microsoft Entra ID SSO not implemented (email/password auth only)
-- Email notifications are simulated (no actual email sends)
-- Escalation auto-triggering requires Admin review step
-
----
-
 ## Team
 
 **Team Name**: TechSnatchers  

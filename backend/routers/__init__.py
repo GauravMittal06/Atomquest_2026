@@ -10,6 +10,7 @@ from routers.checkins import router as checkins_router
 from routers.checkin_comments import router as checkin_comments_router
 from routers.shared_kpis import router as shared_kpis_router
 from routers.system import router as system_router
+from routers.escalations import router as escalations_router
 
 __all__ = [
     "admin_router",
@@ -24,4 +25,5 @@ __all__ = [
     "checkin_comments_router",
     "shared_kpis_router",
     "system_router",
+    "escalations_router",
 ]

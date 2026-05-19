@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import {
   Activity,
+  AlertTriangle,
   BarChart2,
   CheckSquare,
   ClipboardList,
@@ -27,6 +28,7 @@ import { AdminCompletionDashboard } from '@/pages/admin/CompletionDashboard'
 import { AdminGoalSheetsPage } from '@/pages/admin/GoalSheetsPage'
 import { AdminReportsPage } from '@/pages/admin/ReportsPage'
 import { AdminUsersPage } from '@/pages/admin/UsersPage'
+import { AdminEscalationsPage } from '@/pages/admin/EscalationsPage'
 
 const employeeNav = [
   { label: 'Dashboard', to: '/employee/dashboard', icon: <LayoutDashboard size={16} /> },
@@ -46,6 +48,7 @@ const adminNav = [
   { label: 'All Goal Sheets', to: '/admin/goalsheets', icon: <ShieldCheck size={16} /> },
   { label: 'Reports', to: '/admin/reports', icon: <BarChart2 size={16} /> },
   { label: 'Users', to: '/admin/users', icon: <Users size={16} /> },
+  { label: 'Escalations', to: '/admin/escalations', icon: <AlertTriangle size={16} /> },
 ]
 
 export function AppRouter() {
@@ -87,6 +90,7 @@ export function AppRouter() {
           <Route path="/admin/goalsheets" element={<AdminGoalSheetsPage />} />
           <Route path="/admin/reports" element={<AdminReportsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/escalations" element={<AdminEscalationsPage />} />
         </Route>
       </Route>
 

@@ -15,6 +15,7 @@ from routers import (
     checkin_comments_router,
     checkins_router,
     employee_dashboard_router,
+    escalations_router,
     goal_sheets_router,
     goals_router,
     manager_router,
@@ -56,6 +57,7 @@ app.include_router(checkins_router)
 app.include_router(checkin_comments_router)
 app.include_router(shared_kpis_router)
 app.include_router(system_router)
+app.include_router(escalations_router)
 app.include_router(admin_router)
 app.include_router(admin_dashboard_router)
 app.include_router(employee_dashboard_router)

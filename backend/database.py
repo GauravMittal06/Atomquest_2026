@@ -34,6 +34,7 @@ COLLECTION_PERIODS = "appraisal_periods"
 COLLECTION_AUDIT_LOG = "audit_log"
 COLLECTION_SHARED_KPIS = "shared_kpis"
 COLLECTION_CHECKIN_COMMENTS = "checkin_comments"
+COLLECTION_SYSTEM = "system"
 
 
 async def ensure_indexes() -> None:

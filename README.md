@@ -278,8 +278,6 @@ Windows are centrally defined in `appraisal_periods` collection:
 ## Team
 
 **Team Name**: TechSnatchers  
-**Hackathon**: AtomQuest Hackathon 1.0
+**Hackathon**: AtomQuest Hackathon 2026
 
 ---
-
-**Ready for Evaluation** ✅

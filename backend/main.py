@@ -21,6 +21,7 @@ from routers import (
     manager_router,
     shared_kpis_router,
     system_router,
+    cycles_router,
     users_router,
 )
 
@@ -57,6 +58,7 @@ app.include_router(checkins_router)
 app.include_router(checkin_comments_router)
 app.include_router(shared_kpis_router)
 app.include_router(system_router)
+app.include_router(cycles_router)
 app.include_router(escalations_router)
 app.include_router(admin_router)
 app.include_router(admin_dashboard_router)

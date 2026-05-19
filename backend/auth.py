@@ -16,13 +16,30 @@ from models.user import TokenData, UserRole
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
+# bcrypt silently truncates at 72 UTF-8 bytes; passlib raises ValueError instead.
+_BCRYPT_MAX_PASSWORD_BYTES = 72
+
+
+def _truncate_password_for_bcrypt(plain: str) -> str:
+    """Truncate to bcrypt's 72-byte limit at a UTF-8 code-point boundary."""
+    encoded = plain.encode("utf-8")
+    if len(encoded) <= _BCRYPT_MAX_PASSWORD_BYTES:
+        return plain
+    truncated = encoded[:_BCRYPT_MAX_PASSWORD_BYTES]
+    while truncated:
+        try:
+            return truncated.decode("utf-8")
+        except UnicodeDecodeError:
+            truncated = truncated[:-1]
+    return ""
+
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return pwd_context.hash(_truncate_password_for_bcrypt(plain))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_truncate_password_for_bcrypt(plain), hashed)
 
 
 def create_access_token(user_id: str, role: UserRole, expires_delta: Optional[timedelta] = None) -> str:

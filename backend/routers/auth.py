@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from bson import ObjectId
-from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
@@ -12,6 +10,7 @@ from auth import create_access_token, verify_password
 from config import settings
 from database import COLLECTION_USERS, get_database
 from models.user import Token, UserRole
+from utils import parse_oid
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -23,8 +22,19 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 @router.post("/token", response_model=Token)
 async def login(form: OAuth2PasswordRequestForm = Depends()):
     db = get_database()
-    user = await db[COLLECTION_USERS].find_one({"email": form.username})
-    if not user or not verify_password(form.password, user.get("hashed_password", "")):
+    user = await db[COLLECTION_USERS].find_one({"email": form.username.strip().lower()})
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    hashed = user.get("hashed_password") or ""
+    try:
+        password_ok = verify_password(form.password, hashed)
+    except Exception:
+        password_ok = False
+    if not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -33,9 +43,14 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="User account is inactive.")
 
+    try:
+        role = UserRole(user["role"])
+    except (ValueError, KeyError):
+        raise HTTPException(status_code=500, detail="User misconfigured: invalid role")
+
     token = create_access_token(
         user_id=str(user["_id"]),
-        role=UserRole(user["role"]),
+        role=role,
     )
     return Token(access_token=token)
 
@@ -78,8 +93,8 @@ async def mock_login(body: MockLoginRequest):
 
     # Accept either a Mongo ObjectId hex or the seeded employee_id (EMP001, …)
     try:
-        user = await db[COLLECTION_USERS].find_one({"_id": ObjectId(body.employee_id)})
-    except (InvalidId, TypeError):
+        user = await db[COLLECTION_USERS].find_one({"_id": parse_oid(body.employee_id)})
+    except HTTPException:
         user = None
 
     if not user:

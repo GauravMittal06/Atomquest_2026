@@ -16,7 +16,6 @@ from models.user import TokenData, UserRole
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-# bcrypt silently truncates at 72 UTF-8 bytes; passlib raises ValueError instead.
 _BCRYPT_MAX_PASSWORD_BYTES = 72
 
 
@@ -39,7 +38,11 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(_truncate_password_for_bcrypt(plain), hashed)
+    try:
+        return pwd_context.verify(_truncate_password_for_bcrypt(plain), hashed)
+    except Exception as e:
+        print(f"[DEBUG] verify_password error: {type(e).__name__}: {e}")
+        return False
 
 
 def create_access_token(user_id: str, role: UserRole, expires_delta: Optional[timedelta] = None) -> str:
@@ -86,5 +89,4 @@ def require_roles(*roles: UserRole):
     return _check
 
 
-# Admin-only guard (docs/ROLE_PERMISSIONS.md §Admin)
 require_admin = require_roles(UserRole.ADMIN)

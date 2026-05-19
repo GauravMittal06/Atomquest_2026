@@ -126,6 +126,8 @@ export function AdminReportsPage() {
     }))
     .sort((a, b) => a.dept.localeCompare(b.dept))
 
+  const userMap = new Map(allUsers.map((u) => [userId(u), u]))
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -288,7 +290,6 @@ export function AdminReportsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {sharedKpis.map((kpi) => {
-                    const primaryEmp = allUsers.find((u) => u._id === kpi.primary_owner_id)
                     const successCount = kpi.push_results.filter((r) => r.status === 'SUCCESS').length
                     const skipCount = kpi.push_results.filter((r) => r.status === 'SKIPPED').length
                     return (
@@ -313,7 +314,7 @@ export function AdminReportsPage() {
                           </span>
                         </td>
                         <td className="td">
-                          {primaryEmp?.name ?? kpi.primary_owner_id}
+                          {resolvePrimaryOwnerName(kpi, userMap)}
                         </td>
                       </tr>
                     )
@@ -331,6 +332,21 @@ export function AdminReportsPage() {
 // ---------------------------------------------------------------------------
 // Local helpers
 // ---------------------------------------------------------------------------
+
+/** Mongo user id from API (supports `_id` or legacy `id` field). */
+function userId(u: User & { id?: string }): string {
+  return u._id ?? u.id ?? ''
+}
+
+/** Resolve primary owner display name — never expose raw ObjectIds in the UI. */
+function resolvePrimaryOwnerName(kpi: SharedKpi, userMap: Map<string, User>): string {
+  const ownerId = String(kpi.primary_owner_id)
+  const fromPush = kpi.push_results.find((r) => String(r.employee_id) === ownerId)?.employee_name
+  if (fromPush) return fromPush
+  const user = userMap.get(ownerId)
+  if (user?.name) return user.name
+  return '—'
+}
 
 function SectionLabel({
   icon,

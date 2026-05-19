@@ -49,7 +49,7 @@ app.add_middleware(
         "http://localhost:3000",
         "https://atomquest-2026-git-main-gauravmittal06s-projects.vercel.app",
         "https://atomquest-2026-gilt.vercel.app",
-        "*",
+        # "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],

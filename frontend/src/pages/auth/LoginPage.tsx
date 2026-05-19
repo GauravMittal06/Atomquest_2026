@@ -103,7 +103,7 @@ export function LoginPage() {
 
         {/* Dev quick-login */}
         <div className="border-t pt-4 space-y-2">
-          <p className="text-center text-xs text-slate-400 font-medium">Dev: Quick login as</p>
+          <p className="text-center text-xs text-slate-400 font-medium">Dev: Quick login as (use quick login on mobile device)</p>
           <div className="flex gap-2">
             {QUICK_ROLES.map(({ role, employeeId, label, colour }) => (
               <button

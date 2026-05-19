@@ -46,7 +46,7 @@ def create_access_token(user_id: str, role: UserRole, expires_delta: Optional[ti
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
-    payload = {"sub": user_id, "role": role.value, "exp": expire}
+    payload = {"sub": user_id, "role": role.value, "exp": int(expire.timestamp())}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
